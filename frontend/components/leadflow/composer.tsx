@@ -1,0 +1,165 @@
+"use client";
+
+import { Bell, Loader2 } from "lucide-react";
+import { useState, type RefObject } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import type { Lead } from "@/lib/api";
+import { followUpShortcuts, formatOffset, formatWhen, parseFollowUp } from "@/lib/time";
+
+interface ComposerProps {
+  lead: Lead;
+  now: Date;
+  timeZone: string;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  /** Resolves null when the note was saved, or a message explaining why it wasn't. */
+  onSave: (note: string, followUpAt: string | undefined) => Promise<string | null>;
+  onMarkDone: () => Promise<void>;
+  busy: boolean;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+}
+
+const linkButton = "font-semibold whitespace-nowrap text-primary underline underline-offset-3 hover:text-primary-hover disabled:opacity-60";
+
+export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, onMarkDone, busy, textareaRef }: ComposerProps) {
+  const [editingFollowUp, setEditingFollowUp] = useState(false);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const current = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
+  const touched = editingFollowUp && (date !== "" || time !== "");
+  const parsed = touched ? parseFollowUp(date, time, now) : null;
+
+  const closeEditor = () => {
+    setEditingFollowUp(false);
+    setDate("");
+    setTime("");
+    setError(null);
+  };
+
+  const save = async () => {
+    if (saving || busy) return;
+    const note = draft.trim();
+    if (!note) {
+      setError("Write a note before saving.");
+      return;
+    }
+    if (parsed && !parsed.ok) {
+      setError(parsed.message);
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    const failure = await onSave(note, parsed?.ok ? parsed.date.toISOString() : undefined);
+    setSaving(false);
+    if (failure) setError(failure);
+    else closeEditor();
+  };
+
+  return (
+    <div className="flex flex-none flex-col gap-2.5 border-t border-border bg-[#fafbfa] px-4 pt-3.5 sm:px-6">
+      <Label htmlFor="note-box" className="text-[13px] font-semibold text-muted-foreground">
+        New discussion
+      </Label>
+      <Textarea
+        id="note-box"
+        ref={textareaRef}
+        rows={2}
+        value={draft}
+        maxLength={2000}
+        placeholder="What did you discuss?"
+        onChange={(event) => {
+          onDraftChange(event.target.value);
+          setError(null);
+        }}
+        className="min-h-16 resize-y bg-card text-[15px]"
+      />
+
+      {!editingFollowUp ? (
+        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-sm text-body">
+          <span className="mr-auto inline-flex items-center gap-1.5">
+            <Bell aria-hidden="true" className="size-4 text-muted-foreground" />
+            {current ? `Follow-up ${formatWhen(current, now)}` : "No follow-up scheduled"}
+          </span>
+          <button type="button" className={linkButton} onClick={() => setEditingFollowUp(true)}>
+            {current ? "Change follow-up" : "Add follow-up"}
+          </button>
+          {current && (
+            <button type="button" className={linkButton} onClick={() => void onMarkDone()} disabled={busy || saving}>
+              Mark done
+            </button>
+          )}
+        </div>
+      ) : (
+        <fieldset className="flex flex-col gap-2 rounded-[10px] border border-border bg-card p-3">
+          <legend className="sr-only">Follow-up</legend>
+          <div className="flex flex-wrap gap-2">
+            {followUpShortcuts(now).map((shortcut) => (
+              <button
+                key={shortcut.label}
+                type="button"
+                onClick={() => {
+                  setDate(shortcut.date);
+                  setTime(shortcut.time);
+                  setError(null);
+                }}
+                className="h-8 rounded-full border border-input bg-card px-3 text-[13px] font-semibold hover:border-primary hover:text-primary"
+              >
+                {shortcut.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-[13px] font-semibold text-muted-foreground">
+              Date
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+                className="h-10 rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[13px] font-semibold text-muted-foreground">
+              Time
+              <input
+                type="time"
+                value={time}
+                onChange={(event) => setTime(event.target.value)}
+                className="h-10 rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
+              />
+            </label>
+            <span className="pb-2.5 text-[13px] text-muted-foreground">Times in {timeZone}</span>
+          </div>
+          {parsed?.ok && (
+            <p className="text-sm font-semibold text-primary">
+              New follow-up: {formatWhen(parsed.date, now)} ({formatOffset(parsed.date)})
+            </p>
+          )}
+          <p className="text-sm text-muted-foreground">
+            {current ? `Leave empty to keep ${formatWhen(current, now)}. ` : "Optional. "}
+            <button type="button" className={linkButton} onClick={closeEditor}>
+              Cancel
+            </button>
+          </p>
+        </fieldset>
+      )}
+
+      <div className="flex items-center justify-end gap-3 bg-[#fafbfa] pt-1 pb-4 max-sm:sticky max-sm:bottom-0 max-sm:-mx-4 max-sm:border-t max-sm:border-border max-sm:px-4 max-sm:pt-3 max-sm:pb-[max(16px,env(safe-area-inset-bottom))]">
+        {error && (
+          <p role="alert" className="mr-auto text-sm font-semibold text-overdue">
+            {error}
+          </p>
+        )}
+        <Button onClick={() => void save()} disabled={saving || busy} className="h-10 px-4 text-[15px] max-sm:flex-1">
+          {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {saving ? "Saving…" : "Save note"}
+        </Button>
+      </div>
+    </div>
+  );
+}
