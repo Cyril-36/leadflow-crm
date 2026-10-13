@@ -2,69 +2,55 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api, isAbort, type LeadList } from "@/lib/api";
+import { api, type LeadList } from "@/lib/api";
+import { ListLoader, viewFor, type LoaderState, type RefreshOutcome } from "@/lib/list-loader";
 import type { LeadStatus } from "@/lib/status";
 
 export type StatusFilter = LeadStatus | "all";
 
-export interface LeadsState {
-  /** The server's latest answer for the active filter and search. */
-  view: LeadList | null;
-  /** All leads, unfiltered: the source for every count, so counts never depend on the filter. */
-  all: LeadList | null;
-  phase: "loading" | "ready" | "error";
-  /** A refresh failed after data was already shown; the list may be out of date. */
-  stale: boolean;
-  errorMessage: string | null;
+interface Lists {
+  /** The server's answer for the filter and search in the key. */
+  view: LeadList;
+  /** All leads, unfiltered: the source for every count. */
+  all: LeadList;
 }
 
 const BACKGROUND_REFRESH_MS = 60_000;
 
+function keyFor(status: StatusFilter, query: string, tz: string): string {
+  return JSON.stringify([status, query.trim(), tz]);
+}
+
+async function fetchLists(key: string, signal: AbortSignal): Promise<Lists> {
+  const [status, query, tz] = JSON.parse(key) as [StatusFilter, string, string];
+  const filtered = status !== "all" || query !== "";
+  const [view, all] = await Promise.all([
+    api.listLeads({ tz, status: status === "all" ? undefined : status, q: query }, signal),
+    filtered ? api.listLeads({ tz }, signal) : Promise.resolve(null),
+  ]);
+  return { view, all: all ?? view };
+}
+
 /**
- * Loads the lead list (PLAN.md §5). The list is always exactly the server's latest response:
- * pinned and other leads are replaced together, older responses are discarded, and `refresh()`
- * resolves to whether the list is now up to date, so callers can report a failed refresh
- * separately from a successful save.
+ * The lead list for the active filter, search and timezone (PLAN.md §5). What is shown always
+ * belongs to the current parameters; `refresh()` resolves "fresh" only once the list on screen is
+ * current, so callers can report a failed refresh separately from a successful save.
  */
 export function useLeads(status: StatusFilter, query: string, tz: string | null) {
-  const [state, setState] = useState<LeadsState>({
-    view: null,
-    all: null,
-    phase: "loading",
-    stale: false,
-    errorMessage: null,
-  });
-  const sequence = useRef(0);
-  const inFlight = useRef<AbortController | null>(null);
+  const [state, setState] = useState<LoaderState<Lists>>({ data: null, error: null });
+  const loader = useRef<ListLoader<Lists> | null>(null);
+  const key = tz ? keyFor(status, query, tz) : null;
 
-  const refresh = useCallback(async (): Promise<boolean> => {
-    if (!tz) return false;
-    const id = ++sequence.current;
-    inFlight.current?.abort();
-    const controller = new AbortController();
-    inFlight.current = controller;
+  useEffect(() => {
+    const instance = new ListLoader<Lists>(fetchLists, setState);
+    loader.current = instance;
+    return () => instance.dispose();
+  }, []);
 
-    const filtered = status !== "all" || query.trim() !== "";
-    try {
-      const [view, all] = await Promise.all([
-        api.listLeads({ tz, status: status === "all" ? undefined : status, q: query }, controller.signal),
-        filtered ? api.listLeads({ tz }, controller.signal) : Promise.resolve(null),
-      ]);
-      if (id !== sequence.current) return true; // a newer refresh owns the list now
-      setState({ view, all: all ?? view, phase: "ready", stale: false, errorMessage: null });
-      return true;
-    } catch (error) {
-      if (isAbort(error) || id !== sequence.current) return true;
-      const message = error instanceof Error ? error.message : "Couldn't load your leads.";
-      setState((prev) => ({
-        ...prev,
-        phase: prev.view ? "ready" : "error",
-        stale: prev.view !== null,
-        errorMessage: message,
-      }));
-      return false;
-    }
-  }, [status, query, tz]);
+  const refresh = useCallback(async (): Promise<RefreshOutcome> => {
+    if (!loader.current || !key) return "failed";
+    return loader.current.load(key);
+  }, [key]);
 
   // Load whenever the filter, search or timezone changes.
   useEffect(() => {
@@ -83,7 +69,14 @@ export function useLeads(status: StatusFilter, query: string, tz: string | null)
     };
   }, [refresh]);
 
-  useEffect(() => () => inFlight.current?.abort(), []);
-
-  return { ...state, refresh };
+  const shown = viewFor(state, key ?? "");
+  return {
+    view: shown.value?.view ?? null,
+    // Counts never depend on the filter: use the latest unfiltered result, whichever request it came from.
+    all: state.data?.value.all ?? null,
+    phase: shown.phase,
+    stale: shown.stale,
+    errorMessage: shown.errorMessage,
+    refresh,
+  };
 }

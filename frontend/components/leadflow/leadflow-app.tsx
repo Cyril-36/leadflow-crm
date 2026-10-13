@@ -56,9 +56,9 @@ export function LeadFlowApp() {
 
   /** After a saved change: refresh the list, and report a failed refresh separately from the save. */
   const afterChange = async (message: string, actions?: { view?: () => void; showAll?: boolean }) => {
-    const fresh = await leads.refresh();
+    const outcome = await leads.refresh();
     toast.dismiss(); // a saved change supersedes earlier error toasts
-    if (fresh) {
+    if (outcome === "fresh") {
       toast.success(message, {
         duration: actions ? 10_000 : 4_000,
         action: actions?.view ? { label: "View lead", onClick: actions.view } : undefined,
@@ -73,7 +73,7 @@ export function LeadFlowApp() {
   };
 
   const retryRefresh = async () => {
-    if (await leads.refresh()) toast.success("List refreshed.");
+    if ((await leads.refresh()) === "fresh") toast.success("List refreshed.");
     else toast.error("Still couldn't refresh the list. Try again in a moment.");
   };
 
