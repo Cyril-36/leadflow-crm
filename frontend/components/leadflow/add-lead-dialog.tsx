@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api, type Lead } from "@/lib/api";
 
+import { keepOpenForToasts } from "./toast-guard";
+
 interface AddLeadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -79,6 +81,7 @@ export function AddLeadDialog({ open, onOpenChange, onCreated }: AddLeadDialogPr
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
       <DialogContent
         className="gap-4 rounded-[14px] p-6 text-[15px] sm:max-w-[460px]"
+        onInteractOutside={keepOpenForToasts}
         onOpenAutoFocus={() => {
           returnFocusTo.current = document.activeElement as HTMLElement | null;
         }}

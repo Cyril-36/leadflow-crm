@@ -22,6 +22,7 @@ import { ApiError, api, isAbort, type Entry, type Lead, type Mutation } from "@/
 import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
 
 import { Composer } from "./composer";
+import { keepOpenForToasts } from "./toast-guard";
 import { Timeline } from "./timeline";
 
 export interface DialogSession {
@@ -64,6 +65,7 @@ export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange
         <DialogContent
           showCloseButton={false}
           aria-describedby="lead-dialog-company"
+          onInteractOutside={keepOpenForToasts}
           onOpenAutoFocus={(event) => {
             // Desktop: go straight to the note box. Touch: focus the close button so the
             // on-screen keyboard doesn't cover the history.
@@ -74,10 +76,13 @@ export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange
             target?.focus();
           }}
           onCloseAutoFocus={(event) => {
-            // Return focus to the lead's card, even if the list re-rendered while open; otherwise
-            // to whatever opened the dialog (e.g. "View lead" in a toast).
+            // Return focus to the lead's card, even if the list re-rendered while open. If the card
+            // is gone (a status change moved it out of the active filter), fall back to whatever
+            // opened the dialog, then to the selected status filter, so focus is never lost.
             const card = session && document.querySelector<HTMLElement>(`[data-lead-id="${session.leadId}"]`);
-            const target = card ?? (returnFocusTo.current?.isConnected ? returnFocusTo.current : null);
+            const opener = returnFocusTo.current?.isConnected ? returnFocusTo.current : null;
+            const filter = document.querySelector<HTMLElement>('.lf-filters [aria-checked="true"]');
+            const target = card ?? opener ?? filter;
             if (target) {
               event.preventDefault();
               target.focus();

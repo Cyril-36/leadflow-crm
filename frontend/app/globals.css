@@ -103,6 +103,12 @@
   font-family: inherit;
 }
 
+/* Toasts sit outside open dialogs; Radix disables pointer events on everything outside a modal,
+   which would make toast actions such as "Retry refresh" unclickable while a dialog is open. */
+[data-sonner-toaster] {
+  pointer-events: auto;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
