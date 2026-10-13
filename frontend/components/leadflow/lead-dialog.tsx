@@ -41,7 +41,7 @@ interface LeadDialogProps {
   onDraftChange: (leadId: number, value: string) => void;
   onClose: () => void;
   /** Called after any successful change; refreshes the list and reports the outcome. */
-  onChanged: (message: string) => Promise<void>;
+  onChanged: (leadId: number, message: string) => Promise<void>;
 }
 
 const mutationError = (error: unknown) =>
@@ -88,7 +88,7 @@ export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange
               target.focus();
             }
           }}
-          className="flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[14px] p-0 text-[15px] sm:max-w-[720px] max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none"
+          className="flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[14px] p-0 text-[15px] sm:max-w-[720px] max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:data-open:zoom-in-100 max-sm:data-open:slide-in-from-bottom-8 max-sm:data-closed:zoom-out-100 max-sm:data-closed:slide-out-to-bottom-8"
         >
           {session && now ? (
             <LeadDialogBody
@@ -98,7 +98,7 @@ export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange
               timeZone={timeZone}
               draft={draft}
               onDraftChange={(value) => onDraftChange(session.leadId, value)}
-              onChanged={onChanged}
+              onChanged={(message) => onChanged(session.leadId, message)}
               textareaRef={textareaRef}
               closeRef={closeRef}
             />

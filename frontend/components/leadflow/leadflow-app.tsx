@@ -1,8 +1,10 @@
 "use client";
 
 import { Plus, Search, TrendingUp } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+
+import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -30,6 +32,21 @@ function counts(all: LeadList | null, now: Date | null) {
   return { total: leads.length, byStatus, dueToday: all?.pinned.length ?? 0, overdue };
 }
 
+/** A number that pops briefly when its value changes (not on first render). */
+function Count({ value, className }: { value: number; className?: string }) {
+  const [previous, setPrevious] = useState(value);
+  const [changes, setChanges] = useState(0);
+  if (value !== previous) {
+    setPrevious(value);
+    setChanges((n) => n + 1);
+  }
+  return (
+    <b key={changes} className={cn("tabular-nums", changes > 0 && "lf-pop", className)}>
+      {value}
+    </b>
+  );
+}
+
 export function LeadFlowApp() {
   const now = useNow();
   const [timeZone] = useState(() => (typeof window === "undefined" ? null : browserTimeZone()));
@@ -42,6 +59,21 @@ export function LeadFlowApp() {
   const [lastDialog, setLastDialog] = useState<DialogSession | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
+  // Leads changed while their dialog was open get a short highlight once it closes.
+  const [flash, setFlash] = useState<Record<number, number>>({});
+  const changedWhileOpen = useRef(new Set<number>());
+
+  const flashLeads = (ids: number[]) => {
+    if (!ids.length) return;
+    const token = Date.now();
+    setFlash((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, token])) }));
+  };
+
+  const closeLead = () => {
+    setDialog(null);
+    flashLeads([...changedWhileOpen.current]);
+    changedWhileOpen.current.clear();
+  };
 
   const openLead = (leadId: number) => {
     const session = { leadId, key: Date.now() };
@@ -87,6 +119,7 @@ export function LeadFlowApp() {
     } else {
       await afterChange("Lead added.");
     }
+    flashLeads([lead.id]);
   };
 
   const c = counts(leads.all, now);
@@ -131,9 +164,9 @@ export function LeadFlowApp() {
           </h1>
           {leads.all && (
             <p className="text-muted-foreground">
-              Across all leads: <b className="text-foreground tabular-nums">{c.dueToday}</b> due today,{" "}
+              Across all leads: <Count value={c.dueToday} className="text-foreground" /> due today,{" "}
               <span className="text-overdue">
-                <b className="tabular-nums">{c.overdue}</b> overdue
+                <Count value={c.overdue} /> overdue
               </span>
             </p>
           )}
@@ -169,7 +202,7 @@ export function LeadFlowApp() {
         ) : (
           view && (
             <>
-              {view.pinned.length > 0 && <Agenda leads={view.pinned} now={now} onOpen={openLead} />}
+              {view.pinned.length > 0 && <Agenda leads={view.pinned} now={now} onOpen={openLead} flash={flash} />}
               {view.leads.length > 0 && (
                 <section aria-labelledby="other-heading">
                   <h2 id="other-heading" className="mb-2.5 text-[15px] font-semibold">
@@ -178,7 +211,7 @@ export function LeadFlowApp() {
                   <ul className="flex flex-col gap-2">
                     {view.leads.map((lead) => (
                       <li key={lead.id}>
-                        <LeadCard lead={lead} now={now} variant="list" onOpen={openLead} />
+                        <LeadCard lead={lead} now={now} variant="list" onOpen={openLead} flashToken={flash[lead.id]} />
                       </li>
                     ))}
                   </ul>
@@ -196,8 +229,11 @@ export function LeadFlowApp() {
         timeZone={timeZone ?? "UTC"}
         drafts={drafts}
         onDraftChange={(leadId, value) => setDrafts((prev) => ({ ...prev, [leadId]: value }))}
-        onClose={() => setDialog(null)}
-        onChanged={(message) => afterChange(message)}
+        onClose={closeLead}
+        onChanged={(leadId, message) => {
+          changedWhileOpen.current.add(leadId);
+          return afterChange(message);
+        }}
       />
       <AddLeadDialog open={addOpen} onOpenChange={setAddOpen} onCreated={onCreated} />
       <Toaster position="bottom-center" theme="light" />

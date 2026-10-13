@@ -12,9 +12,11 @@ interface LeadCardProps {
   /** "agenda": a slot in today's follow-ups; "list": a row in the other leads. */
   variant: "agenda" | "list";
   onOpen: (id: number) => void;
+  /** Changes when this lead was just updated; replays a short highlight. */
+  flashToken?: number;
 }
 
-export function LeadCard({ lead, now, variant, onOpen }: LeadCardProps) {
+export function LeadCard({ lead, now, variant, onOpen, flashToken }: LeadCardProps) {
   const followUp = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
   const overdue = followUp !== null && followUp < now;
   const closed = isClosed(lead.status);
@@ -28,12 +30,19 @@ export function LeadCard({ lead, now, variant, onOpen }: LeadCardProps) {
       data-lead-id={lead.id}
       onClick={() => onOpen(lead.id)}
       className={cn(
-        "flex w-full flex-col gap-1.5 rounded-[10px] border bg-card px-4 py-3.5 text-left transition-colors",
+        "relative isolate flex w-full flex-col gap-1.5 rounded-[10px] border bg-card px-4 py-3.5 text-left transition-colors",
         "hover:border-[#b5c0ba] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
         overdue ? "border-overdue-border bg-overdue-surface" : "border-border",
         closed && !overdue && "bg-[#f8f9f8]",
       )}
     >
+      {flashToken !== undefined && (
+        <span
+          key={flashToken}
+          aria-hidden="true"
+          className="lf-flash pointer-events-none absolute inset-0 -z-10 rounded-[10px] bg-accent ring-2 ring-primary/40"
+        />
+      )}
       {variant === "agenda" && followUp && (
         <span className={cn("text-[13px] font-bold sm:hidden", overdue ? "text-overdue" : "text-primary")}>
           {formatTime(followUp)}

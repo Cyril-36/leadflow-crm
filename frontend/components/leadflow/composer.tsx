@@ -82,7 +82,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
 
       {!editingFollowUp ? (
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-sm text-body">
-          <span className="mr-auto inline-flex items-center gap-1.5">
+          <span className="mr-auto inline-flex items-center gap-1.5 max-sm:basis-full">
             <Bell aria-hidden="true" className="size-4 text-muted-foreground" />
             {current ? `Follow-up ${formatWhen(current, now)}` : "No follow-up scheduled"}
           </span>
@@ -96,9 +96,9 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
           )}
         </div>
       ) : (
-        <fieldset className="flex flex-col gap-2 rounded-[10px] border border-border bg-card p-3">
+        <fieldset className="lf-fade-in flex flex-col gap-2 rounded-[10px] border border-border bg-card p-3 max-sm:gap-1.5 max-sm:p-2.5">
           <legend className="sr-only">Follow-up</legend>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 max-sm:-mx-2.5 max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:px-2.5 max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
             {followUpShortcuts(now).map((shortcut) => (
               <button
                 key={shortcut.label}
@@ -108,20 +108,20 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
                   setTime(shortcut.time);
                   setError(null);
                 }}
-                className="h-8 rounded-full border border-input bg-card px-3 text-[13px] font-semibold hover:border-primary hover:text-primary"
+                className="h-8 shrink-0 rounded-full border border-input bg-card px-3 text-[13px] font-semibold hover:border-primary hover:text-primary"
               >
                 {shortcut.label}
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3 max-sm:grid max-sm:grid-cols-2 max-sm:gap-2">
             <label className="flex flex-col gap-1 text-[13px] font-semibold text-muted-foreground">
               Date
               <input
                 type="date"
                 value={date}
                 onChange={(event) => setDate(event.target.value)}
-                className="h-10 rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
+                className="h-10 w-full rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
               />
             </label>
             <label className="flex flex-col gap-1 text-[13px] font-semibold text-muted-foreground">
@@ -130,10 +130,10 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
                 type="time"
                 value={time}
                 onChange={(event) => setTime(event.target.value)}
-                className="h-10 rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
+                className="h-10 w-full rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
               />
             </label>
-            <span className="pb-2.5 text-[13px] text-muted-foreground">Times in {timeZone}</span>
+            <span className="pb-2.5 text-[13px] text-muted-foreground max-sm:col-span-2 max-sm:pb-0">Times in {timeZone}</span>
           </div>
           {parsed?.ok && (
             <p className="text-sm font-semibold text-primary">

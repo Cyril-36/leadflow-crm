@@ -9,10 +9,11 @@ interface AgendaProps {
   leads: Lead[];
   now: Date;
   onOpen: (id: number) => void;
+  flash: Record<number, number>;
 }
 
 /** Today's follow-ups as a day planner: overdue slots above the "Now" line, upcoming below. */
-export function Agenda({ leads, now, onOpen }: AgendaProps) {
+export function Agenda({ leads, now, onOpen, flash }: AgendaProps) {
   const due = (lead: Lead) => new Date(lead.next_follow_up_at as string);
   const before = leads.filter((lead) => due(lead) < now);
   const after = leads.filter((lead) => due(lead) >= now);
@@ -30,7 +31,7 @@ export function Agenda({ leads, now, onOpen }: AgendaProps) {
         >
           {formatTime(due(lead))}
         </span>
-        <LeadCard lead={lead} now={now} variant="agenda" onOpen={onOpen} />
+        <LeadCard lead={lead} now={now} variant="agenda" onOpen={onOpen} flashToken={flash[lead.id]} />
       </li>
     );
   };

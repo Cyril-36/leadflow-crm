@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function LoadingList() {
   return (
-    <div aria-busy="true" className="flex flex-col gap-3">
+    <div aria-busy="true" className="lf-delayed flex flex-col gap-3">
       <p role="status" className="sr-only">
         Loading your leads
       </p>
