@@ -29,7 +29,7 @@ leadflow/
   backend/  app/{main,config,db,clock,models,schemas,errors}.py
             app/services/leads.py  app/routers/leads.py  seed.py  tests/
   frontend/ app/  components/  lib/{api,status,time}.ts  e2e/
-  .env.example  README.md  AI_USAGE.md  PLAN.md
+  .env.example  README.md  PLAN.md
 ```
 
 ### Data model
@@ -219,7 +219,7 @@ hash. Nothing is called verified without running its check.
 | 2 | Backend verification | P0 | §10 backend rows pass with a frozen clock; invariant D holds under concurrency | `uv run pytest -q` |
 | 3 | Functional frontend | P0 | Every P0 flow works in the browser and after reload; six filters; §5 reconciliation including the save/refresh split | `npm run lint && npm run build && node --test`, manual checklist |
 | 4 | UI design and polish | P1 | Design direction chosen; §6 behaviors; search UI, overdue red, counts, shortcuts; responsive to 375 px; loading, empty and error states; keyboard access | screenshots at 375 / 1280 px |
-| 5 | Submission audit | Gates + P1 | Seed; Playwright scenarios; clean-clone setup; README accurate; `.env.example` complete; `AI_USAGE.md`; screenshots (video if time) | clean clone → `uv sync --frozen`, `npm ci`, seed, `npx playwright test`; lockfiles unchanged |
+| 5 | Submission audit | Gates + P1 | Seed; Playwright scenarios; clean-clone setup; README accurate; `.env.example` complete; screenshots (video if time) | clean clone → `uv sync --frozen`, `npm ci`, seed, `npx playwright test`; lockfiles unchanged |
 | 6 | Optional | P2 | Docker Compose; then edit lead details; login only if time remains | `docker compose up --build`, `curl /api/health` |
 
 ## 10. Tests mapped to the evaluation matrix
