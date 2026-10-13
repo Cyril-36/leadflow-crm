@@ -23,6 +23,15 @@ LEAD_COUNT = 8
 NOTE_COUNT = 11
 
 
+def _floor_quarter(t: datetime) -> datetime:
+    return t - timedelta(minutes=t.minute % 15, seconds=t.second, microseconds=t.microsecond)
+
+
+def _ceil_quarter(t: datetime) -> datetime:
+    floored = _floor_quarter(t)
+    return floored if floored == t else floored + timedelta(minutes=15)
+
+
 class _Seeder:
     def __init__(self, session: Session, now: datetime) -> None:
         self.session = session
@@ -34,6 +43,40 @@ class _Seeder:
         return datetime.combine(
             self.now.date() + timedelta(days=offset), time(hour, minute), tzinfo=self.now.tzinfo
         )
+
+    def weekday(self, offset: int, hour: int, minute: int = 0) -> datetime:
+        """Like day(), but moved forward to Monday if it lands on a weekend."""
+        at = self.day(offset, hour, minute)
+        while at.weekday() >= 5:
+            at += timedelta(days=1)
+        return at
+
+    def earlier_today(self) -> datetime:
+        """A follow-up that already passed today, in business hours whenever now allows it."""
+        candidate = min(
+            max(self.day(0, 9), _floor_quarter(self.now - timedelta(hours=2))), self.day(0, 17, 30)
+        )
+        if candidate < self.now:
+            return candidate
+        return self.now - min(timedelta(hours=2), (self.now - self.midnight) / 2)
+
+    def later_today(self) -> datetime:
+        """A follow-up still ahead today, in business hours whenever now allows it."""
+        candidate = min(
+            max(self.day(0, 10), _ceil_quarter(self.now + timedelta(hours=2))), self.day(0, 17, 30)
+        )
+        if candidate > self.now:
+            return candidate
+        return self.now + min(
+            timedelta(hours=3), (self.midnight + timedelta(days=1) - self.now) / 2
+        )
+
+    def recent(self) -> datetime:
+        """The most recent discussion: this morning in business hours when possible."""
+        candidate = max(self.day(0, 9), _floor_quarter(self.now - timedelta(hours=2)))
+        if candidate < self.now - timedelta(minutes=25):
+            return candidate
+        return self.now - min(timedelta(hours=2), (self.now - self.midnight) / 3)
 
     def lead(self, at: datetime, name: str, company: str | None, phone: str | None) -> int:
         payload = LeadCreate(name=name, company=company, phone=phone)
@@ -53,10 +96,11 @@ def seed(session_factory: sessionmaker[Session], now: datetime) -> None:
     """Insert the demo leads. `now` must be timezone-aware; it fixes what "today" means."""
     with session_factory() as session:
         s = _Seeder(session, now)
-        # Two follow-ups today that work at any hour: one already passed, one still ahead.
-        earlier_today = now - min(timedelta(hours=2), (now - s.midnight) / 2)
-        later_today = now + min(timedelta(hours=3), (s.midnight + timedelta(days=1) - now) / 2)
-        recent = now - min(timedelta(hours=2), (now - s.midnight) / 3)
+        # Two follow-ups today, one already passed and one still ahead: business-hour times when
+        # the clock allows, otherwise times relative to now so the demo works at any hour.
+        earlier_today = s.earlier_today()
+        later_today = s.later_today()
+        recent = s.recent()
 
         rohan = s.lead(s.day(-8, 9), "Rohan Mehta", "Tidewater Foods", "555-0101")
         s.note(
@@ -105,13 +149,16 @@ def seed(session_factory: sessionmaker[Session], now: datetime) -> None:
             leah,
             recent - timedelta(minutes=20),
             "Demo went well. Wants a two-week trial for two advisors.",
-            s.day(2, 11),
+            s.weekday(2, 11),
         )
         s.status(leah, recent - timedelta(minutes=19), LeadStatus.QUALIFIED)
 
         arjun = s.lead(s.day(-2, 10), "Arjun Kapoor", "Halcyon Freight", "555-0106")
         s.note(
-            arjun, s.day(-2, 11), "Intro call done. Send the logistics case study.", s.day(5, 10)
+            arjun,
+            s.day(-2, 11),
+            "Intro call done. Send the logistics case study.",
+            s.weekday(5, 10),
         )
         s.status(arjun, s.day(-2, 11, 1), LeadStatus.CONTACTED)
 
