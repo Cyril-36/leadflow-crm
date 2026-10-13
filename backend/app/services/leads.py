@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.clock import Clock
+from app.db import begin_write
 from app.errors import AppError, field_error, lead_not_found
 from app.models import STATUS_LABELS, Entry, EntryKind, Lead, LeadStatus
 from app.schemas import (
@@ -47,8 +48,8 @@ def local_day_bounds(now: datetime, zone: ZoneInfo) -> tuple[datetime, datetime]
 
 
 def _begin_write(session: Session, clock: Clock) -> datetime:
-    """Open the transaction (BEGIN IMMEDIATE takes the write lock), then read the clock."""
-    session.connection()
+    """Take the write lock, then read the clock, so timestamps follow commit order."""
+    begin_write(session)
     return clock()
 
 

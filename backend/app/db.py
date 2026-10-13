@@ -4,6 +4,8 @@ from fastapi import Request
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+WRITE_OPTION = "leadflow_write"
+
 
 class Base(DeclarativeBase):
     pass
@@ -24,12 +26,21 @@ def make_engine(database_url: str) -> Engine:
         cursor.close()
 
     @event.listens_for(engine, "begin")
-    def _begin_immediate(connection) -> None:
-        # Take the write lock when a transaction starts, so concurrent requests are serialized
-        # and timestamps read after the lock follow commit order (PLAN.md §4D).
-        connection.exec_driver_sql("BEGIN IMMEDIATE")
+    def _begin(connection) -> None:
+        # Reads use ordinary deferred transactions, so in WAL mode they never wait for writers.
+        # Write transactions (opened via begin_write) take the write lock up front, so writes are
+        # serialized and never fail mid-transaction on a stale read snapshot.
+        mode = "IMMEDIATE" if connection.get_execution_options().get(WRITE_OPTION) else "DEFERRED"
+        connection.exec_driver_sql(f"BEGIN {mode}")
 
     return engine
+
+
+def begin_write(session: Session) -> None:
+    """Start a write transaction on `session`, holding SQLite's write lock until commit."""
+    if session.in_transaction():
+        raise RuntimeError("begin_write must open the session's transaction")
+    session.connection(execution_options={WRITE_OPTION: True})
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

@@ -117,10 +117,14 @@ transaction. A note without one leaves the existing follow-up unchanged (the for
 
 **D. Follow-up invariant** (covers set and clear). Let *F* be a lead's entries that are either
 `note` with a follow-up or `follow_up_cleared`. Then `lead.next_follow_up_at` equals the
-`follow_up_at` of the latest entry of *F* by `(created_at, id)` if it is a note, and `null` if
-it is a clear or *F* is empty. Every write transaction starts with `BEGIN IMMEDIATE`, and
-`created_at` is read from the clock **after** the lock is held, so `(created_at, id)` order
-matches commit order. Tested with a mix of concurrent set and clear operations.
+`follow_up_at` of the entry of *F* with the **highest id** if it is a note, and `null` if it is
+a clear or *F* is empty. Ids are the authoritative operation order: only write transactions
+start with `BEGIN IMMEDIATE`, writes are serialized, and `AUTOINCREMENT` ids are assigned in
+commit order and never reused. This does not depend on the system clock, which can move
+backwards. `created_at` is still read after the lock is held, so the visible timeline
+(`created_at DESC, id DESC`) normally agrees with id order. Reads use ordinary deferred
+transactions and never wait for writers (WAL). Tested with concurrent set and clear operations
+and with reads during a held write lock.
 
 **E. Status changes are non-destructive.** A change writes a `status_changed` entry ("Status
 changed from Qualified to Proposal Sent") and touches nothing else. Follow-ups are kept.
