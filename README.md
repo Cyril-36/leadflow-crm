@@ -6,6 +6,11 @@ A single-screen lead tracker for a sales rep: see every lead at a glance, keep a
 discussion, and never miss a follow-up. Built for the PravarAI fullstack assessment with
 **Next.js 16 + FastAPI**.
 
+**Live demo:** https://leadflow-zdbh.onrender.com (API: https://leadflow-api-no50.onrender.com/docs).
+Hosted on Render's free tier, so after 15 idle minutes it sleeps: the first visit can take about a
+minute to wake both services. Each wake-up starts from fresh demo data (8 fictional leads, times
+relative to that moment in India time), so feel free to add leads and notes.
+
 **Demo video:** [docs/demo.mp4](docs/demo.mp4) walks through the evaluation checklist in order.
 
 | Desktop | Phone (375 px) |
