@@ -22,11 +22,19 @@ describe("csvCell", () => {
     assert.equal(csvCell("+"), "'+");
   });
 
-  it("leaves phone numbers alone, even with a leading + or -", () => {
+  it("leaves +91-style phone numbers and signed numbers alone", () => {
     assert.equal(csvCell("+91 98765 43210"), "+91 98765 43210");
-    assert.equal(csvCell("+1 (555) 010-1234"), "+1 (555) 010-1234");
+    assert.equal(csvCell("+919876543210"), "+919876543210");
     assert.equal(csvCell("-5"), "-5");
-    assert.equal(csvCell("555-0107"), "555-0107");
+    assert.equal(csvCell("555-0107"), "555-0107"); // no leading formula character
+  });
+
+  it("still guards signed values that contain arithmetic", () => {
+    assert.equal(csvCell("+1-2"), "'+1-2");
+    assert.equal(csvCell("+1 -2"), "'+1 -2");
+    assert.equal(csvCell("-1+1"), "'-1+1");
+    assert.equal(csvCell("+1 (555) 010-1234"), "'+1 (555) 010-1234");
+    assert.equal(csvCell("+1.5"), "'+1.5");
   });
 });
 
