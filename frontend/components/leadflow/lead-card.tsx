@@ -50,14 +50,16 @@ export function LeadCard({ lead, now, variant, onOpen, flashToken }: LeadCardPro
         </span>
       )}
       <span className="flex w-full flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <span className={cn("text-base font-semibold", closed && "text-muted-foreground")}>{lead.name}</span>
-        {lead.company && <span className="text-muted-foreground">{lead.company}</span>}
-        <StatusBadge status={lead.status} className="ml-auto" />
+        <span className={cn("min-w-0 text-base font-semibold [overflow-wrap:anywhere]", closed && "text-muted-foreground")}>
+          {lead.name}
+        </span>
+        {lead.company && <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">{lead.company}</span>}
+        <StatusBadge status={lead.status} className="ml-auto shrink-0" />
       </span>
       <span className="flex w-full min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2.5">
         <span
           className={cn(
-            "line-clamp-2 min-w-0 sm:line-clamp-1",
+            "line-clamp-2 min-w-0 [overflow-wrap:anywhere] sm:line-clamp-1",
             lead.last_note ? (closed ? "text-muted-foreground" : "text-body") : "text-muted-foreground italic",
           )}
         >

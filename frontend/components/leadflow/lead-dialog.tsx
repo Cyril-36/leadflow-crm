@@ -19,6 +19,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, api, isAbort, type Entry, type Lead, type Mutation } from "@/lib/api";
+import { TaskQueue, mergeEntry, newerLead } from "@/lib/detail-state";
 import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
 
 import { Composer } from "./composer";
@@ -39,6 +40,8 @@ interface LeadDialogProps {
   timeZone: string;
   drafts: Record<number, string>;
   onDraftChange: (leadId: number, value: string) => void;
+  /** A note was saved from this exact draft text; clear the draft only if it hasn't changed since. */
+  onDraftSaved: (leadId: number, submitted: string) => void;
   onClose: () => void;
   /** Called after any successful change; refreshes the list and reports the outcome. */
   onChanged: (leadId: number, message: string) => Promise<void>;
@@ -57,6 +60,7 @@ export function LeadDialog({
   timeZone,
   drafts,
   onDraftChange,
+  onDraftSaved,
   onClose,
   onChanged,
   listStale,
@@ -112,6 +116,7 @@ export function LeadDialog({
               timeZone={timeZone}
               draft={draft}
               onDraftChange={(value) => onDraftChange(session.leadId, value)}
+              onDraftSaved={(submitted) => onDraftSaved(session.leadId, submitted)}
               onChanged={(message) => onChanged(session.leadId, message)}
               listStale={listStale}
               onRefreshList={onRefreshList}
@@ -158,6 +163,7 @@ interface BodyProps {
   timeZone: string;
   draft: string;
   onDraftChange: (value: string) => void;
+  onDraftSaved: (submitted: string) => void;
   onChanged: (message: string) => Promise<void>;
   listStale: boolean;
   onRefreshList: () => Promise<void>;
@@ -176,6 +182,7 @@ function LeadDialogBody({
   timeZone,
   draft,
   onDraftChange,
+  onDraftSaved,
   onChanged,
   listStale,
   onRefreshList,
@@ -184,7 +191,11 @@ function LeadDialogBody({
 }: BodyProps) {
   const [detail, setDetail] = useState<Detail>({ phase: "loading" });
   const [pendingStatus, setPendingStatus] = useState<LeadStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Changes to one lead run one at a time, so responses can't arrive out of order, and each
+  // response is reconciled rather than blindly applied (newest lead copy wins, entries in server order).
+  const [queue] = useState(() => new TaskQueue());
+  const [inFlight, setInFlight] = useState(0);
+  const busy = inFlight > 0;
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(
@@ -212,9 +223,21 @@ function LeadDialogBody({
   const apply = (mutation: Mutation) =>
     setDetail((prev) =>
       prev.phase === "ready"
-        ? { phase: "ready", lead: mutation.lead, entries: mutation.entry ? [mutation.entry, ...prev.entries] : prev.entries }
+        ? { phase: "ready", lead: newerLead(prev.lead, mutation.lead), entries: mergeEntry(prev.entries, mutation.entry) }
         : prev,
     );
+
+  /** Queue a change for this lead and apply its response when it arrives. */
+  const mutate = async (request: () => Promise<Mutation>): Promise<Mutation> => {
+    setInFlight((n) => n + 1);
+    try {
+      const result = await queue.run(request);
+      apply(result);
+      return result;
+    } finally {
+      setInFlight((n) => n - 1);
+    }
+  };
 
   // Once the history is in, move a desktop user from the close button into the note box.
   const ready = detail.phase === "ready";
@@ -224,32 +247,30 @@ function LeadDialogBody({
   }, [ready, closeRef, textareaRef]);
 
   const changeStatus = async (lead: Lead, value: LeadStatus) => {
-    if (value === lead.status || pendingStatus) return;
+    if (pendingStatus || value === lead.status) return;
     setPendingStatus(value);
     try {
-      const result = await api.updateStatus(lead.id, value);
-      apply(result);
+      await mutate(() => api.updateStatus(lead.id, value));
       setPendingStatus(null);
       await onChanged(`Status changed to ${statusLabel(value)}.`);
     } catch (error) {
       setPendingStatus(null);
-      toast.error(`Couldn't change the status. It's still ${statusLabel(lead.status)}.`, {
-        description: mutationError(error),
-      });
+      toast.error(`Couldn't change the status to ${statusLabel(value)}.`, { description: mutationError(error) });
     }
   };
 
-  const saveNote = async (lead: Lead, note: string, followUpAt: string | undefined): Promise<string | null> => {
-    setBusy(true);
+  const saveNote = async (
+    lead: Lead,
+    note: string,
+    followUpAt: string | undefined,
+    submittedDraft: string,
+  ): Promise<string | null> => {
     try {
-      const result = await api.addDiscussion(lead.id, { note, follow_up_at: followUpAt });
-      apply(result);
-      onDraftChange("");
-      setBusy(false);
+      await mutate(() => api.addDiscussion(lead.id, { note, follow_up_at: followUpAt }));
+      onDraftSaved(submittedDraft); // keeps anything typed while the save was in flight
       await onChanged("Note saved.");
       return null;
     } catch (error) {
-      setBusy(false);
       const message = mutationError(error);
       toast.error("Couldn't save the note. It's still in the box.", { description: message });
       return message;
@@ -257,14 +278,11 @@ function LeadDialogBody({
   };
 
   const markDone = async (lead: Lead) => {
-    setBusy(true);
+    if (busy) return;
     try {
-      const result = await api.clearFollowUp(lead.id);
-      apply(result);
-      setBusy(false);
+      await mutate(() => api.clearFollowUp(lead.id));
       await onChanged("Follow-up marked done.");
     } catch (error) {
-      setBusy(false);
       toast.error("Couldn't mark the follow-up done.", { description: mutationError(error) });
     }
   };
@@ -277,13 +295,13 @@ function LeadDialogBody({
     <>
       <div className="flex flex-none flex-wrap items-start gap-x-4 gap-y-3 border-b border-border py-4 pr-3 pl-4 sm:pl-6">
         <div className="min-w-0 flex-1 basis-60">
-          <DialogTitle className="text-[22px] leading-tight font-bold tracking-tight">
+          <DialogTitle className="text-[22px] leading-tight font-bold tracking-tight [overflow-wrap:anywhere]">
             {lead ? lead.name : detail.phase === "loading" ? <Skeleton className="h-6 w-48 bg-[#e2e7e3]" /> : "Lead"}
           </DialogTitle>
           <DialogDescription id="lead-dialog-company" className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[15px] text-muted-foreground">
             {lead ? (
               <>
-                <span>{lead.company ?? "No company"}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{lead.company ?? "No company"}</span>
                 {lead.phone && (
                   <a href={`tel:${tel}`} className="inline-flex items-center gap-1.5 text-body hover:text-primary">
                     <Phone aria-hidden="true" className="size-[15px]" />
@@ -347,7 +365,7 @@ function LeadDialogBody({
 
       {detail.phase === "ready" && lead ? (
         <div className="flex min-h-0 flex-1 flex-col max-sm:scroll-pb-24 max-sm:overflow-y-auto">
-          <div className="min-h-[120px] flex-1 overflow-y-auto px-4 pt-5 pb-1 sm:px-6 max-sm:flex-none max-sm:overflow-visible">
+          <div className="min-h-[120px] flex-1 overflow-y-auto px-4 pt-5 pb-1 sm:px-6 max-sm:flex-[1_0_auto] max-sm:overflow-visible">
             <Timeline entries={detail.entries} now={now} />
           </div>
           <Composer
@@ -356,7 +374,7 @@ function LeadDialogBody({
             timeZone={timeZone}
             draft={draft}
             onDraftChange={onDraftChange}
-            onSave={(note, followUpAt) => saveNote(lead, note, followUpAt)}
+            onSave={(note, followUpAt, submittedDraft) => saveNote(lead, note, followUpAt, submittedDraft)}
             onMarkDone={() => markDone(lead)}
             busy={busy}
             textareaRef={textareaRef}

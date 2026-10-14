@@ -229,6 +229,9 @@ export function LeadFlowApp() {
         timeZone={timeZone ?? "UTC"}
         drafts={drafts}
         onDraftChange={(leadId, value) => setDrafts((prev) => ({ ...prev, [leadId]: value }))}
+        onDraftSaved={(leadId, submitted) =>
+          setDrafts((prev) => (prev[leadId] === submitted ? { ...prev, [leadId]: "" } : prev))
+        }
         onClose={closeLead}
         listStale={leads.stale}
         onRefreshList={retryRefresh}

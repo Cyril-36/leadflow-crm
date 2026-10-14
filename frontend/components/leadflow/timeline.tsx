@@ -32,7 +32,7 @@ export function Timeline({ entries, now }: { entries: Entry[]; now: Date }) {
                 <p className="mb-1 text-[13px] text-muted-foreground">
                   <time dateTime={entry.created_at}>{formatWhen(at, now)}</time> ({formatAgo(at, now)})
                 </p>
-                <p className="whitespace-pre-wrap text-body">{entry.body}</p>
+                <p className="whitespace-pre-wrap text-body [overflow-wrap:anywhere]">{entry.body}</p>
                 {followUp && (
                   <span className="mt-2 inline-block rounded-md bg-accent px-2.5 py-0.5 text-[13px] font-semibold text-accent-foreground">
                     Follow-up set for {formatWhen(followUp, now)}
@@ -40,7 +40,7 @@ export function Timeline({ entries, now }: { entries: Entry[]; now: Date }) {
                 )}
               </>
             ) : (
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
                 <i className="text-body">{body}</i>, <time dateTime={entry.created_at}>{formatWhen(at, now)}</time>
               </p>
             )}

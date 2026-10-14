@@ -15,8 +15,11 @@ interface ComposerProps {
   timeZone: string;
   draft: string;
   onDraftChange: (value: string) => void;
-  /** Resolves null when the note was saved, or a message explaining why it wasn't. */
-  onSave: (note: string, followUpAt: string | undefined) => Promise<string | null>;
+  /**
+   * Resolves null when the note was saved, or a message explaining why it wasn't. `submittedDraft`
+   * is the exact text sent, so the caller clears the draft only if it hasn't changed meanwhile.
+   */
+  onSave: (note: string, followUpAt: string | undefined, submittedDraft: string) => Promise<string | null>;
   onMarkDone: () => Promise<void>;
   busy: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -58,7 +61,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
     }
     setError(null);
     setSaving(true);
-    const failure = await onSave(note, parsed?.ok ? parsed.date.toISOString() : undefined);
+    const failure = await onSave(note, parsed?.ok ? parsed.date.toISOString() : undefined, draft);
     setSaving(false);
     if (failure) setError(failure);
     else closeEditor();
@@ -113,7 +116,9 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
               <button
                 key={shortcut.label}
                 type="button"
+                aria-disabled={saving}
                 onClick={() => {
+                  if (saving) return;
                   setDate(shortcut.date);
                   setTime(shortcut.time);
                   setError(null);
@@ -130,6 +135,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
               <input
                 type="date"
                 value={date}
+                readOnly={saving}
                 onChange={(event) => setDate(event.target.value)}
                 className="h-10 w-full rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
               />
@@ -139,6 +145,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
               <input
                 type="time"
                 value={time}
+                readOnly={saving}
                 onChange={(event) => setTime(event.target.value)}
                 className="h-10 w-full rounded-lg border border-input bg-card px-2.5 text-[15px] font-normal text-foreground"
               />
@@ -152,7 +159,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
           )}
           <p className="text-sm text-muted-foreground">
             {current ? `Leave empty to keep ${formatWhen(current, now)}. ` : "Optional. "}
-            <button type="button" className={linkButton} onClick={closeEditor}>
+            <button type="button" className={linkButton} aria-disabled={saving} onClick={() => !saving && closeEditor()}>
               Cancel
             </button>
           </p>
