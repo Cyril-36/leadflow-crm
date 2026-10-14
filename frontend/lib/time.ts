@@ -167,10 +167,30 @@ export function snoozeShortcuts(now: Date, current: Date | null): Shortcut[] {
   return current ? shortcuts.filter((s) => s.at.getTime() >= current.getTime()) : shortcuts;
 }
 
-/** The browser's IANA timezone, e.g. "Asia/Kolkata". */
+/**
+ * Current names for zones that browsers (ICU) still report by their old name, e.g. Chrome in
+ * India reports "Asia/Calcutta". Both are valid IANA names; the current one is what people expect.
+ */
+const CURRENT_ZONE_NAMES: Record<string, string> = {
+  "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Asia/Rangoon": "Asia/Yangon",
+  "Europe/Kiev": "Europe/Kyiv",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "Pacific/Truk": "Pacific/Chuuk",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+};
+
+export function currentZoneName(zone: string): string {
+  return CURRENT_ZONE_NAMES[zone] ?? zone;
+}
+
+/** The browser's IANA timezone by its current name, e.g. "Asia/Kolkata". */
 export function browserTimeZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return currentZoneName(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   } catch {
     return "UTC";
   }

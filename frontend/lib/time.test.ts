@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  currentZoneName,
   dayOffset,
   followUpShortcuts,
   snoozeShortcuts,
@@ -136,5 +137,17 @@ describe("snoozeShortcuts", () => {
 
   it("keeps the choice equal to the current follow-up", () => {
     assert.deepEqual(labels(new Date(2026, 9, 14, 14, 45)), ["Later today, 2:45 PM", "Tomorrow, 10 AM", "Next Mon, 10 AM"]);
+  });
+});
+
+describe("currentZoneName", () => {
+  it("uses the current name for zones browsers report by their old one", () => {
+    assert.equal(currentZoneName("Asia/Calcutta"), "Asia/Kolkata");
+    assert.equal(currentZoneName("Europe/Kiev"), "Europe/Kyiv");
+  });
+
+  it("leaves current names alone", () => {
+    assert.equal(currentZoneName("Asia/Kolkata"), "Asia/Kolkata");
+    assert.equal(currentZoneName("America/New_York"), "America/New_York");
   });
 });

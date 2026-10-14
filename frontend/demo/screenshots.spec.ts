@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-// README screenshots from the freshly seeded demo environment.
+// README screenshots from the freshly seeded demo environment, at 2x pixel density so text stays
+// sharp on high-resolution screens.
 const OUT = "../docs/screenshots";
+
+test.use({ deviceScaleFactor: 2 });
 
 test("desktop", async ({ page }) => {
   await page.goto("/");
@@ -17,6 +20,21 @@ test("desktop", async ({ page }) => {
   await dialog.getByRole("button", { name: "Tomorrow, 10 AM" }).click();
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/desktop-timeline-dialog.png` });
+});
+
+test("desktop extras", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('section[aria-labelledby="agenda-heading"]')).toBeVisible();
+  await page.getByRole("button", { name: /Needs attention/ }).click();
+  await expect(page.getByText(/^Open leads with an overdue follow-up/)).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/desktop-needs-attention.png` });
+
+  await page.getByRole("button", { name: /Needs attention/ }).click();
+  await page.getByRole("button", { name: "Snooze the follow-up for Rohan Mehta" }).click();
+  await expect(page.getByRole("menuitem", { name: "Tomorrow, 10 AM" })).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/desktop-snooze.png` });
 });
 
 test("mobile", async ({ page }) => {

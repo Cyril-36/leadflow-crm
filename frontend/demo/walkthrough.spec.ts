@@ -1,7 +1,57 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
 
 // A paced walkthrough of the assessment's evaluation matrix, recorded as video. The waits here
 // are deliberate pauses for the viewer, not synchronisation; every step still asserts its result.
+//
+// Recording: Chrome's screencast at 2x pixel density (2560x1600) sends a frame on every repaint, with its
+// time. Those frames are resampled to a steady 30 fps by when each was on screen, so the video
+// plays at real speed (1x), then encoded at high quality. Needs ffmpeg with libx264 on the PATH.
+
+const FRAMES = path.resolve("test-results/demo-frames");
+const OUTPUT = path.resolve("../docs/demo.mp4");
+
+async function startRecording(page: Page) {
+  rmSync(FRAMES, { recursive: true, force: true });
+  mkdirSync(FRAMES, { recursive: true });
+  const frames: { file: string; at: number }[] = [];
+  const cdp: CDPSession = await page.context().newCDPSession(page);
+  cdp.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
+    const file = `frame-${String(frames.length).padStart(5, "0")}.jpg`;
+    writeFileSync(path.join(FRAMES, file), Buffer.from(data, "base64"));
+    frames.push({ file, at: metadata.timestamp ?? Date.now() / 1000 });
+    void cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+  });
+  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 95, everyNthFrame: 1, maxWidth: 2560, maxHeight: 1600 });
+  return async () => {
+    const end = Date.now() / 1000;
+    await cdp.send("Page.stopScreencast");
+    // Resample to a steady 30 fps: each tick shows the frame that was on screen at that moment,
+    // so the video lasts exactly as long as the recording did (1x). Sorted by time, since Chrome
+    // can stamp its first (initial-state) frame after the next one.
+    const ordered = [...frames].sort((a, b) => a.at - b.at);
+    const fps = 30;
+    const ticks = Math.round((end - ordered[0].at) * fps);
+    const sequence = path.join(FRAMES, "sequence");
+    mkdirSync(sequence);
+    for (let tick = 0, j = 0; tick < ticks; tick++) {
+      const t = ordered[0].at + tick / fps;
+      while (j + 1 < ordered.length && ordered[j + 1].at <= t) j++;
+      symlinkSync(path.join(FRAMES, ordered[j].file), path.join(sequence, `${String(tick).padStart(6, "0")}.jpg`));
+    }
+    execFileSync("ffmpeg", [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-framerate", String(fps), "-i", path.join(sequence, "%06d.jpg"),
+      "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart", "-an", OUTPUT,
+    ]);
+    writeFileSync(path.join(FRAMES, "timing.json"), JSON.stringify({ seconds: end - ordered[0].at, ticks, fps }));
+    return frames.length;
+  };
+}
 
 const CAPTION_ID = "demo-caption";
 
@@ -60,14 +110,31 @@ async function clickOn(page: Page, target: Locator) {
 
 const pause = (page: Page, ms = 1800) => page.waitForTimeout(ms);
 
-test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } });
+// Headed: only a visible window gives the screencast frames at full 2x resolution (headless
+// sends them at CSS size). The flags keep Chrome painting at full speed if the window is covered.
+test.use({
+  video: "off",
+  deviceScaleFactor: 2,
+  headless: false,
+  launchOptions: {
+    args: [
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
+      "--disable-background-timer-throttling",
+    ],
+  },
+});
 
 test("LeadFlow walkthrough", async ({ page }) => {
   await installCursor(page);
   await page.goto("/");
   await expect(page.locator('section[aria-labelledby="agenda-heading"]')).toBeVisible();
-  const tz = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-  await caption(page, `LeadFlow: a single-screen lead tracker (browser time zone: ${tz})`);
+  await page.waitForTimeout(600); // let entrance animations settle before recording
+  const stopRecording = await startRecording(page);
+  const zone = await page.evaluate(
+    () => new Intl.DateTimeFormat("en-US", { timeZoneName: "long" }).formatToParts().find((p) => p.type === "timeZoneName")?.value,
+  );
+  await caption(page, `LeadFlow: a single-screen lead tracker (times shown in ${zone})`);
   await pause(page, 2600);
 
   // 1. Lead list.
@@ -167,6 +234,35 @@ test("LeadFlow walkthrough", async ({ page }) => {
   await clickOn(page, overdueToggle);
   await pause(page, 700);
 
+  await caption(page, "Extra: Needs attention lists open leads that need action, and says why");
+  const attention = page.getByRole("button", { name: /Needs attention/ });
+  await clickOn(page, attention);
+  await expect(page.getByText(/^Open leads with an overdue follow-up/)).toBeVisible();
+  await pause(page, 900);
+  await page.mouse.wheel(0, 260); // bring the reason chips up, clear of the caption
+  await pause(page, 600);
+  await point(page, page.getByText("No follow-up scheduled", { exact: true }).first());
+  await pause(page, 2800);
+  await clickOn(page, attention);
+  await pause(page, 700);
+
+  await caption(page, "Extra: Snooze a due follow-up in one click");
+  const rohan = page.locator("[data-lead-id]", { hasText: "Rohan Mehta" });
+  await clickOn(page, page.getByRole("button", { name: "Snooze the follow-up for Rohan Mehta" }));
+  await pause(page, 1200);
+  await clickOn(page, page.getByRole("menuitem", { name: "Tomorrow, 10 AM" }));
+  await expect(page.getByText("Follow-up for Rohan Mehta moved to Tomorrow, 10:00 AM.")).toBeVisible();
+  await expect(rohan).toContainText("Follow-up Tomorrow, 10:00 AM");
+  await point(page, rohan);
+  await pause(page, 2600);
+
+  await caption(page, "Extra: export the leads on screen as CSV, with the active filters");
+  const download = page.waitForEvent("download");
+  await clickOn(page, page.getByRole("button", { name: "Export the leads shown as CSV" }));
+  await download;
+  await expect(page.getByText(/^Exported \d+ leads\.$/)).toBeVisible();
+  await pause(page, 2400);
+
   await caption(page, "Extra: reschedule a follow-up without writing a note");
   await clickOn(page, page.locator("[data-lead-id]", { hasText: "Arjun Kapoor" }));
   await clickOn(page, dialog.getByRole("button", { name: "Change follow-up" }));
@@ -186,6 +282,9 @@ test("LeadFlow walkthrough", async ({ page }) => {
   await pause(page, 1800);
   await clickOn(page, dialog.getByRole("button", { name: "Close" }));
 
-  await caption(page, "Also: Docker Compose, keyboard shortcuts and drafts that survive a refresh. github.com/Cyril-36/leadflow-crm");
-  await pause(page, 3200);
+  await caption(page, "Also: Docker Compose, keyboard shortcuts and drafts that survive a refresh. Code: github.com/Cyril-36/leadflow-crm");
+  await pause(page, 3400);
+
+  const frames = await stopRecording();
+  expect(frames).toBeGreaterThan(100);
 });
