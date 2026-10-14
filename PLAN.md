@@ -39,7 +39,8 @@ leads    id INTEGER PK AUTOINCREMENT, name, company?, phone?,
          status ENUM(new, contacted, qualified, proposal_sent, won, lost) DEFAULT new,
          next_follow_up_at? (UTC), created_at, updated_at
 entries  id INTEGER PK AUTOINCREMENT, lead_id FK → leads (CASCADE),
-         kind ENUM(note, lead_created, status_changed, follow_up_cleared),
+         kind ENUM(note, lead_created, status_changed, follow_up_cleared, follow_up_set,
+                   details_updated),
          body, follow_up_at? (UTC), created_at (UTC, µs)
          INDEX (lead_id, created_at DESC, id DESC)
 ```
@@ -67,6 +68,8 @@ activity.
 | GET | `/api/leads/{id}/timeline` | 200 `[Entry]` | 404 |
 | POST | `/api/leads/{id}/discussions` `{note, follow_up_at?}` | **201** `{lead, entry}` (`note`) | 404, 422 |
 | DELETE | `/api/leads/{id}/follow-up` | 200 `{lead, entry}` (`follow_up_cleared`, or `null` if none was set) | 404 |
+| PUT | `/api/leads/{id}/follow-up` `{follow_up_at}` | 200 `{lead, entry}` (`follow_up_set`, or `null` if unchanged) | 404, 422 |
+| PATCH | `/api/leads/{id}/details` `{name?, company?, phone?}` | 200 `{lead, entry}` (`details_updated`, or `null` if unchanged) | 404, 422 |
 
 `LeadSummary`: `id, name, company, phone, status, next_follow_up_at, follow_up_overdue,
 last_note: {body, at} | null, created_at, updated_at`.
@@ -115,10 +118,10 @@ one of the six values; unknown body fields are rejected.
 **C. Discussions** — a note with `follow_up_at` sets `lead.next_follow_up_at` in the same
 transaction. A note without one leaves the existing follow-up unchanged (the form says so, §6).
 
-**D. Follow-up invariant** (covers set and clear). Let *F* be a lead's entries that are either
-`note` with a follow-up or `follow_up_cleared`. Then `lead.next_follow_up_at` equals the
-`follow_up_at` of the entry of *F* with the **highest id** if it is a note, and `null` if it is
-a clear or *F* is empty. Ids are the authoritative operation order: only write transactions
+**D. Follow-up invariant** (covers set, move and clear). Let *F* be a lead's entries that are
+`note` with a follow-up, `follow_up_set` or `follow_up_cleared`. Then `lead.next_follow_up_at`
+equals the `follow_up_at` of the entry of *F* with the **highest id** if it is a note or a
+`follow_up_set`, and `null` if it is a clear or *F* is empty. Ids are the authoritative operation order: only write transactions
 start with `BEGIN IMMEDIATE`, writes are serialized, and `AUTOINCREMENT` ids are assigned in
 commit order and never reused. This does not depend on the system clock, which can move
 backwards. `created_at` is still read after the lock is held, so the visible timeline

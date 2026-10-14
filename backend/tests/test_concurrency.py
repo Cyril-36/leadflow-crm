@@ -88,9 +88,11 @@ def test_follow_up_invariant_under_concurrent_set_and_clear(app, client):
     lead_id = create_lead(client)["id"]
     base = utc_now() + timedelta(days=1)
     rng = random.Random(7)
+    # Three ways to change a follow-up: a note that sets one, setting it directly, and clearing it.
+    kinds = ["set", "move", "clear"]
     operations = [
-        ("set", base + timedelta(minutes=i)) if rng.random() < 0.6 else ("clear", None)
-        for i in range(80)
+        (kind, None if kind == "clear" else base + timedelta(minutes=i))
+        for i, kind in enumerate(rng.choices(kinds, weights=[4, 3, 3], k=90))
     ]
 
     def run(operation):
@@ -103,6 +105,10 @@ def test_follow_up_invariant_under_concurrent_set_and_clear(app, client):
                     "follow_up_at": follow_up.isoformat(),
                 },
             )
+        elif kind == "move":
+            response = client.put(
+                f"/api/leads/{lead_id}/follow-up", json={"follow_up_at": follow_up.isoformat()}
+            )
         else:
             response = client.delete(f"/api/leads/{lead_id}/follow-up")
         listing = client.get("/api/leads")  # reads interleaved with writes
@@ -112,12 +118,14 @@ def test_follow_up_invariant_under_concurrent_set_and_clear(app, client):
         results = list(pool.map(run, operations))
 
     sets = [r for r in results if r[0] == "set"]
+    moves = [r for r in results if r[0] == "move"]
     clears = [r for r in results if r[0] == "clear"]
+    assert sets and moves and clears
     assert all(r[2].status_code == 201 for r in sets)
-    assert all(r[2].status_code == 200 for r in clears)
+    assert all(r[2].status_code == 200 for r in moves + clears)
     assert all(r[3].status_code == 200 for r in results)
     # Each response reflects its own committed transaction.
-    for _, follow_up, response, _ in sets:
+    for _, follow_up, response, _ in sets + moves:
         assert parse_ts(response.json()["lead"]["next_follow_up_at"]) == follow_up
     for _, _, response, _ in clears:
         assert response.json()["lead"]["next_follow_up_at"] is None
@@ -125,13 +133,19 @@ def test_follow_up_invariant_under_concurrent_set_and_clear(app, client):
     entries = client.get(f"/api/leads/{lead_id}/timeline").json()
     notes = [e for e in entries if e["kind"] == "note"]
     cleared = [e for e in entries if e["kind"] == "follow_up_cleared"]
+    moved = [e for e in entries if e["kind"] == "follow_up_set"]
     assert len(notes) == len(sets)
+    assert len(moved) == len(moves)
     assert len(cleared) == sum(1 for r in clears if r[2].json()["entry"] is not None)
 
-    # Invariant D: the highest-id set/clear entry decides the lead's follow-up.
-    relevant = [e for e in entries if e["kind"] == "follow_up_cleared" or e["follow_up_at"]]
+    # Invariant D: the highest-id set/move/clear entry decides the lead's follow-up.
+    relevant = [
+        e
+        for e in entries
+        if e["kind"] in ("follow_up_cleared", "follow_up_set") or e["follow_up_at"]
+    ]
     latest = max(relevant, key=lambda e: e["id"])
-    expected = latest["follow_up_at"] if latest["kind"] == "note" else None
+    expected = None if latest["kind"] == "follow_up_cleared" else latest["follow_up_at"]
     assert client.get(f"/api/leads/{lead_id}").json()["next_follow_up_at"] == expected
 
     # Timestamps were read under the lock, so the visible timeline agrees with id order.

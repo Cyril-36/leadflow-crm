@@ -9,7 +9,9 @@ from app.models import LeadStatus
 from app.schemas import (
     DiscussionCreate,
     EntryOut,
+    FollowUpSet,
     LeadCreate,
+    LeadDetailsUpdate,
     LeadListOut,
     LeadOut,
     LeadStatusUpdate,
@@ -68,3 +70,17 @@ def add_discussion(
 @router.delete("/{lead_id}/follow-up", response_model=MutationOut)
 def clear_follow_up(lead_id: int, session: SessionDep, clock: ClockDep) -> MutationOut:
     return service.clear_follow_up(session, clock, lead_id)
+
+
+@router.patch("/{lead_id}/details", response_model=MutationOut)
+def update_details(
+    lead_id: int, payload: LeadDetailsUpdate, session: SessionDep, clock: ClockDep
+) -> MutationOut:
+    return service.update_details(session, clock, lead_id, payload)
+
+
+@router.put("/{lead_id}/follow-up", response_model=MutationOut)
+def set_follow_up(
+    lead_id: int, payload: FollowUpSet, session: SessionDep, clock: ClockDep
+) -> MutationOut:
+    return service.set_follow_up(session, clock, lead_id, payload)

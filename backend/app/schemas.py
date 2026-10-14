@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import EntryKind, LeadStatus
 
@@ -41,6 +41,46 @@ class LeadCreate(_Input):
 
 class LeadStatusUpdate(_Input):
     status: LeadStatus
+
+
+class LeadDetailsUpdate(_Input):
+    """Any subset of name, company and phone. A blank company or phone clears it."""
+
+    name: str | None = Field(default=None, max_length=120)
+    company: str | None = Field(default=None, max_length=120)
+    phone: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name_required(cls, value: object) -> object:
+        # Only runs when "name" is sent: it can't be cleared, only changed.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ValueError("Name is required.")
+        return value
+
+    @field_validator("company", "phone", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def _phone_format(cls, value: str | None) -> str | None:
+        if value is not None and not PHONE_RE.fullmatch(value):
+            raise ValueError("Phone can contain only digits, spaces and + ( ) - . (3-30 chars).")
+        return value
+
+    @model_validator(mode="after")
+    def _something_to_update(self) -> "LeadDetailsUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Send at least one of name, company or phone.")
+        return self
+
+
+class FollowUpSet(_Input):
+    follow_up_at: AwareDatetime
 
 
 class DiscussionCreate(_Input):

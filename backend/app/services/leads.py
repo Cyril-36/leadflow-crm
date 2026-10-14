@@ -14,8 +14,10 @@ from app.models import STATUS_LABELS, Entry, EntryKind, Lead, LeadStatus
 from app.schemas import (
     DiscussionCreate,
     EntryOut,
+    FollowUpSet,
     LastNote,
     LeadCreate,
+    LeadDetailsUpdate,
     LeadListOut,
     LeadOut,
     MutationOut,
@@ -239,6 +241,57 @@ def clear_follow_up(session: Session, clock: Clock, lead_id: int) -> MutationOut
         created_at=now,
     )
     lead.next_follow_up_at = None
+    lead.updated_at = now
+    session.add(entry)
+    return _commit(session, lead, entry, now)
+
+
+def _join(words: list[str]) -> str:
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def update_details(
+    session: Session, clock: Clock, lead_id: int, data: LeadDetailsUpdate
+) -> MutationOut:
+    now = _begin_write(session, clock)
+    lead = _get_lead(session, lead_id)
+    changed = []
+    for field in ("name", "company", "phone"):
+        if field in data.model_fields_set and getattr(lead, field) != getattr(data, field):
+            setattr(lead, field, getattr(data, field))
+            changed.append(field)
+    if not changed:
+        return _commit(session, lead, None, now)
+
+    lead.updated_at = now
+    entry = Entry(
+        lead_id=lead.id,
+        kind=EntryKind.DETAILS_UPDATED,
+        body=f"Updated {_join(changed)}",
+        created_at=now,
+    )
+    session.add(entry)
+    return _commit(session, lead, entry, now)
+
+
+def set_follow_up(session: Session, clock: Clock, lead_id: int, data: FollowUpSet) -> MutationOut:
+    """Set or move the follow-up without writing a discussion note."""
+    now = _begin_write(session, clock)
+    lead = _get_lead(session, lead_id)
+    follow_up = data.follow_up_at.astimezone(UTC)
+    if follow_up <= now:
+        raise field_error("follow_up_at", "Follow-up must be in the future.")
+    if lead.next_follow_up_at == follow_up:
+        return _commit(session, lead, None, now)
+
+    entry = Entry(
+        lead_id=lead.id,
+        kind=EntryKind.FOLLOW_UP_SET,
+        body="Follow-up rescheduled" if lead.next_follow_up_at else "Follow-up set",
+        follow_up_at=follow_up,
+        created_at=now,
+    )
+    lead.next_follow_up_at = follow_up
     lead.updated_at = now
     session.add(entry)
     return _commit(session, lead, entry, now)

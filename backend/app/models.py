@@ -48,6 +48,8 @@ class EntryKind(StrEnum):
     LEAD_CREATED = "lead_created"
     STATUS_CHANGED = "status_changed"
     FOLLOW_UP_CLEARED = "follow_up_cleared"
+    FOLLOW_UP_SET = "follow_up_set"
+    DETAILS_UPDATED = "details_updated"
 
 
 def _str_enum(enum_cls: type[StrEnum]) -> Enum:
@@ -87,6 +89,6 @@ class Entry(Base):
     lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
     kind: Mapped[EntryKind] = mapped_column(_str_enum(EntryKind))
     body: Mapped[str] = mapped_column(Text)
-    # For notes: the follow-up the note set. For follow_up_cleared: the follow-up it cleared.
+    # For notes and follow_up_set: the follow-up it set. For follow_up_cleared: the one it cleared.
     follow_up_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
