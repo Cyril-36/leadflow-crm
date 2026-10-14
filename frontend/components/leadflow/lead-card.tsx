@@ -14,9 +14,11 @@ interface LeadCardProps {
   onOpen: (id: number) => void;
   /** Changes when this lead was just updated; replays a short highlight. */
   flashToken?: number;
+  /** Why the lead needs attention, shown in the Needs attention view. */
+  reasons?: string[];
 }
 
-export function LeadCard({ lead, now, variant, onOpen, flashToken }: LeadCardProps) {
+export function LeadCard({ lead, now, variant, onOpen, flashToken, reasons }: LeadCardProps) {
   const followUp = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
   const overdue = followUp !== null && followUp < now;
   const closed = isClosed(lead.status);
@@ -70,6 +72,15 @@ export function LeadCard({ lead, now, variant, onOpen, flashToken }: LeadCardPro
       {variant === "agenda" && overdue && followUp && (
         <span className="self-start rounded-md bg-overdue-tint px-2.5 py-0.5 text-[13px] font-semibold text-overdue">
           Overdue since {formatTime(followUp)}
+        </span>
+      )}
+      {reasons && reasons.length > 0 && (
+        <span className="flex flex-wrap gap-1.5">
+          {reasons.map((reason) => (
+            <span key={reason} className="rounded-md bg-stale px-2.5 py-0.5 text-[13px] font-semibold text-stale-foreground">
+              {reason}
+            </span>
+          ))}
         </span>
       )}
       {variant === "list" && followUp && (
