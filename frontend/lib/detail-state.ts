@@ -11,16 +11,28 @@ export interface Ordered {
 }
 
 /**
+ * Microseconds since the epoch for the API's ISO timestamps ("…T23:30:48.076988Z"). Date.parse
+ * keeps only milliseconds, which could make two writes in the same millisecond look equal.
+ */
+export function timestampMicros(iso: string): number {
+  const fraction = /\.(\d+)/.exec(iso)?.[1] ?? "";
+  const wholeSeconds = Math.floor(Date.parse(iso) / 1000);
+  return wholeSeconds * 1_000_000 + Number(fraction.slice(0, 6).padEnd(6, "0"));
+}
+
+/**
  * The lead to show after a response arrives: whichever copy the server wrote last. A response
- * that arrives late (for an older change) must not overwrite a newer one.
+ * that arrives late (for an older change) must not overwrite a newer one. Within one dialog the
+ * per-lead TaskQueue already applies responses in commit order; this check is the second line of
+ * defence, and on an exact tie the incoming (later-queued) response wins.
  */
 export function newerLead<T extends Revisioned>(current: T, incoming: T): T {
-  return Date.parse(incoming.updated_at) >= Date.parse(current.updated_at) ? incoming : current;
+  return timestampMicros(incoming.updated_at) >= timestampMicros(current.updated_at) ? incoming : current;
 }
 
 /** Newest first by creation time, then id, matching the server's timeline order. */
 export function compareEntries(a: Ordered, b: Ordered): number {
-  return Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id;
+  return timestampMicros(b.created_at) - timestampMicros(a.created_at) || b.id - a.id;
 }
 
 /** Add an entry to a newest-first timeline: no duplicates, and in the server's order. */

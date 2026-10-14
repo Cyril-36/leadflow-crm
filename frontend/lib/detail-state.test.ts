@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { TaskQueue, mergeEntry, newerLead } from "./detail-state.ts";
+import { TaskQueue, mergeEntry, newerLead, timestampMicros } from "./detail-state.ts";
+
+describe("timestampMicros", () => {
+  it("keeps microsecond precision, with or without a fraction", () => {
+    assert.equal(timestampMicros("2026-10-14T01:13:26.000002Z") - timestampMicros("2026-10-14T01:13:26.000001Z"), 1);
+    assert.equal(timestampMicros("2026-10-14T01:13:26Z"), timestampMicros("2026-10-14T01:13:26.000000Z"));
+    assert.equal(timestampMicros("2026-10-14T01:13:26.5Z") - timestampMicros("2026-10-14T01:13:26Z"), 500_000);
+  });
+});
 
 describe("newerLead", () => {
+  it("tells apart writes less than a millisecond apart", () => {
+    const first = { status: "contacted", updated_at: "2026-10-14T01:13:26.000100Z" };
+    const second = { status: "qualified", updated_at: "2026-10-14T01:13:26.000900Z" };
+    assert.equal(newerLead(second, first), second);
+  });
+
   it("keeps the newer copy when an older response arrives last", () => {
     const qualified = { status: "qualified", updated_at: "2026-10-14T01:13:32.000001Z" };
     const contacted = { status: "contacted", updated_at: "2026-10-14T01:13:26.000001Z" };
