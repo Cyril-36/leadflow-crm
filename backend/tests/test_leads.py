@@ -48,6 +48,10 @@ def test_blank_optional_fields_become_null(client):
         ({"name": "A", "company": "x" * 121}, "company"),
         ({"name": "A", "phone": "call me"}, "phone"),
         ({"name": "A", "phone": "12"}, "phone"),
+        ({"name": "A", "phone": "---"}, "phone"),
+        ({"name": "A", "phone": "( )"}, "phone"),
+        ({"name": "A", "phone": "12\n34"}, "phone"),
+        ({"name": "A", "phone": "12\t34"}, "phone"),
         ({"name": "A", "status": "won"}, "status"),
         ({"name": "A", "owner": 1}, "owner"),
     ],
@@ -241,3 +245,10 @@ def test_missing_lead_returns_404(client, method, path, json):
     kwargs = {"json": json} if json is not None else {}
     error = assert_error(getattr(client, method)(path, **kwargs), 404, "lead_not_found")
     assert error["message"] == "Lead 999 was not found."
+
+
+@pytest.mark.parametrize("phone", ["+91 98765 43210", "(555) 010-1234", "555.0101", "+1-555-0101"])
+def test_real_phone_formats_are_accepted(client, phone):
+    response = client.post("/api/leads", json={"name": "A", "phone": phone})
+    assert response.status_code == 201
+    assert response.json()["lead"]["phone"] == phone

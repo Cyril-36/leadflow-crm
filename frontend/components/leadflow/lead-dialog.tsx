@@ -52,6 +52,13 @@ interface LeadDialogProps {
   /** The list behind the dialog failed to refresh; offer a retry that keyboard users can reach. */
   listStale: boolean;
   onRefreshList: () => Promise<void>;
+  /** A change made outside the dialog (Snooze on a card), with when it completed. */
+  externalMutation: ExternalMutation | null;
+}
+
+export interface ExternalMutation {
+  mutation: Mutation;
+  at: number;
 }
 
 const mutationError = (error: unknown) =>
@@ -70,6 +77,7 @@ export function LeadDialog({
   onChanged,
   listStale,
   onRefreshList,
+  externalMutation,
 }: LeadDialogProps) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -116,6 +124,7 @@ export function LeadDialog({
           {session && now ? (
             <LeadDialogBody
               key={session.key}
+              openedAt={session.key}
               leadId={session.leadId}
               now={now}
               timeZone={timeZone}
@@ -126,6 +135,7 @@ export function LeadDialog({
               onChanged={(message) => onChanged(session.leadId, message)}
               listStale={listStale}
               onRefreshList={onRefreshList}
+              externalMutation={externalMutation}
               textareaRef={textareaRef}
               closeRef={closeRef}
             />
@@ -165,6 +175,8 @@ export function LeadDialog({
 
 interface BodyProps {
   leadId: number;
+  /** When this dialog was opened (Date.now()); earlier outside changes are already in its fetch. */
+  openedAt: number;
   now: Date;
   timeZone: string;
   draft: string;
@@ -174,8 +186,14 @@ interface BodyProps {
   onChanged: (message: string) => Promise<void>;
   listStale: boolean;
   onRefreshList: () => Promise<void>;
+  externalMutation: ExternalMutation | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   closeRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+/** Fold one change into a lead and its timeline: newest lead copy wins, entries in server order. */
+function reconcile(current: { lead: Lead; entries: Entry[] }, mutation: Mutation): { lead: Lead; entries: Entry[] } {
+  return { lead: newerLead(current.lead, mutation.lead), entries: mergeEntry(current.entries, mutation.entry) };
 }
 
 type Detail =
@@ -185,6 +203,7 @@ type Detail =
 
 function LeadDialogBody({
   leadId,
+  openedAt,
   now,
   timeZone,
   draft,
@@ -194,6 +213,7 @@ function LeadDialogBody({
   onChanged,
   listStale,
   onRefreshList,
+  externalMutation,
   textareaRef,
   closeRef,
 }: BodyProps) {
@@ -206,13 +226,15 @@ function LeadDialogBody({
   const busy = inFlight > 0;
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
   const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
         const [lead, entries] = await Promise.all([api.getLead(leadId, signal), api.timeline(leadId, signal)]);
-        setDetail({ phase: "ready", lead, entries });
+        // The fetch may have been read before an outside change committed: merge those in too.
+        setDetail({ phase: "ready", ...external.current.reduce(reconcile, { lead, entries }) });
       } catch (error) {
         if (isAbort(error)) return;
         setDetail({ phase: "error", message: mutationError(error) });
@@ -229,6 +251,17 @@ function LeadDialogBody({
       controller.abort();
     };
   }, [load]);
+
+  // Changes made outside the dialog while it is open (Snooze on this lead's card). Held so a history
+  // fetch that is still loading also gets them, then merged like the dialog's own responses.
+  const external = useRef<Mutation[]>([]);
+  useEffect(() => {
+    if (!externalMutation || externalMutation.at < openedAt || externalMutation.mutation.lead.id !== leadId) return;
+    const { mutation } = externalMutation;
+    if (external.current.includes(mutation)) return;
+    external.current.push(mutation);
+    setDetail((prev) => (prev.phase === "ready" ? { phase: "ready", ...reconcile(prev, mutation) } : prev));
+  }, [externalMutation, openedAt, leadId]);
 
   const apply = (mutation: Mutation) =>
     setDetail((prev) =>
@@ -300,6 +333,7 @@ function LeadDialogBody({
   };
 
   const saveDetails = async (lead: Lead, details: LeadDetails): Promise<Record<string, string>> => {
+    setSavingDetails(true);
     try {
       await mutate(() => api.updateDetails(lead.id, details));
       setEditing(false);
@@ -310,6 +344,8 @@ function LeadDialogBody({
       if (error instanceof ApiError && error.details.length) return error.fieldErrors();
       toast.error("Couldn't update the details.", { description: mutationError(error) });
       return {};
+    } finally {
+      setSavingDetails(false);
     }
   };
 
@@ -381,7 +417,8 @@ function LeadDialogBody({
               size="icon-lg"
               aria-label="Edit details"
               aria-expanded={editing}
-              onClick={() => setEditing((open) => !open)}
+              aria-disabled={savingDetails}
+              onClick={() => !savingDetails && setEditing((open) => !open)}
             >
               <Pencil />
             </Button>
@@ -394,16 +431,6 @@ function LeadDialogBody({
         </div>
       </div>
 
-      {lead && editing && (
-        <DetailsEditor
-          lead={lead}
-          onSave={(details) => saveDetails(lead, details)}
-          onCancel={() => {
-            setEditing(false);
-            editButtonRef.current?.focus();
-          }}
-        />
-      )}
 
       {listStale && (
         <div role="status" className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 bg-stale px-4 py-2 text-sm text-stale-foreground sm:px-6">
@@ -426,6 +453,18 @@ function LeadDialogBody({
 
       {detail.phase === "ready" && lead ? (
         <div className="flex min-h-0 flex-1 flex-col max-sm:scroll-pb-24 max-sm:overflow-y-auto">
+          {/* Inside the scrolling region, so on a short phone screen its buttons can be scrolled to. */}
+          {editing && (
+            <DetailsEditor
+              lead={lead}
+              saving={savingDetails}
+              onSave={(details) => saveDetails(lead, details)}
+              onCancel={() => {
+                setEditing(false);
+                editButtonRef.current?.focus();
+              }}
+            />
+          )}
           <div className="min-h-[120px] flex-1 overflow-y-auto px-4 pt-5 pb-1 sm:px-6 max-sm:flex-[1_0_auto] max-sm:overflow-visible">
             <Timeline entries={detail.entries} now={now} />
           </div>

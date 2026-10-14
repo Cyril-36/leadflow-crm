@@ -35,6 +35,13 @@ follow-ups in red, a seed script with 8 fictional leads and their discussions, a
 
 **Extras that came out of using it**
 
+- **Needs attention.** A work queue of open leads with an overdue follow-up, no follow-up
+  scheduled, or no discussion in the last 7 days; each card says why. Won and Lost leads never
+  appear.
+- **Snooze.** Cards due today or overdue have a Snooze menu: later today, tomorrow 10 AM, the next
+  working day (when tomorrow is a weekend) or next Monday.
+- **Export CSV.** Downloads exactly the leads on screen, with the active filters, times in your
+  time zone, and formula-safe cells for spreadsheets.
 - **Reminder filters.** The "due today" and "overdue" counts are toggles that combine with the
   status filter and search; *Clear filters* resets everything.
 - **Reschedule without a note.** Change or set a follow-up on its own (the button becomes *Save
@@ -101,9 +108,9 @@ of [`.env.example`](.env.example) to `backend/.env` and/or `frontend/.env.local`
 
 | Suite | Command | What it covers |
 |---|---|---|
-| Backend (pytest, 110 tests) | `cd backend && uv run pytest` | Validation, status codes and error format, pinned/overdue rules with a frozen clock, DST days in New York and Santiago, legacy time zone names, timeline order, search and filters, editing and rescheduling, 90 simultaneous follow-up changes, persistence across restarts, CORS, the seed |
-| Frontend unit (27 tests) | `cd frontend && npm test` | Time helpers (calendar-relative wording, DST gaps and repeats), list request handling (results tied to their filter, overlapping refreshes) and reconciling out-of-order responses |
-| Browser (Playwright, 22 tests) | `cd frontend && npx playwright install chromium && npm run test:e2e` | The full workflow end to end; editing, rescheduling, reminder filters, draft recovery, keyboard shortcuts; failed saves, failed and overlapping refreshes, a status change racing a pending save, text typed during a save; long names at 375 px and desktop; the phone layout with the keyboard open; keyboard focus |
+| Backend (pytest, 121 tests) | `cd backend && uv run pytest` | Validation (including phone formats and time zone directory names), status codes and error format, pinned/overdue rules with a frozen clock, DST days in New York and Santiago, legacy time zone names, timeline order, search and filters, editing and rescheduling, 90 simultaneous follow-up changes, persistence across restarts, CORS, the seed |
+| Frontend unit (50 tests) | `cd frontend && npm test` | Time helpers (calendar-relative wording, DST gaps and repeats, weekend-aware shortcuts), list request handling (results tied to their filter, overlapping refreshes), reconciling out-of-order responses, the Needs attention rules, Snooze choices, search matching for new leads, and CSV quoting and formula safety (+91-style phone numbers left intact) |
+| Browser (Playwright, 37 tests) | `cd frontend && npx playwright install chromium && npm run test:e2e` | The full workflow end to end; editing, rescheduling, reminder filters, Needs attention, Snooze (pointer, keyboard, focus when filtered out, failure, no-op, never earlier, completing while the lead is open), CSV export, a new lead hidden by search, draft recovery, keyboard shortcuts; failed saves, failed and overlapping refreshes, a status change racing a pending save, a slow details save, the details editor on a short phone screen, text typed during a save; long names at 375 px and desktop; the phone layout with the keyboard open; keyboard focus |
 | Lint and types | `cd backend && uv run ruff check .` · `cd frontend && npm run lint && npm run typecheck` | |
 
 The browser tests never touch your local app or its data: they start their own API on port 8100
@@ -130,7 +137,9 @@ frontend/  Next.js 16 (App Router) + TypeScript + Tailwind + shadcn/ui
   lib/api.ts               typed API client with user-facing error messages
   lib/list-loader.ts       list request bookkeeping (framework-free, unit-tested)
   lib/detail-state.ts      ordering and reconciling changes to one lead (unit-tested)
-  lib/time.ts              local-time formatting and DST-safe parsing (unit-tested)
+  lib/time.ts              local-time formatting, DST-safe parsing, follow-up shortcuts (unit-tested)
+  lib/attention.ts         Needs attention rules (unit-tested)
+  lib/csv.ts               CSV export (unit-tested)
   e2e/                     Playwright tests
 docker-compose.yml         API + app, SQLite volume, health checks
 ```

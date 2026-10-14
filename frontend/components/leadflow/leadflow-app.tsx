@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, TrendingUp } from "lucide-react";
+import { CircleAlert, Download, Plus, Search, TrendingUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,17 +13,20 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useDrafts } from "@/hooks/use-drafts";
 import { useLeads, type StatusFilter } from "@/hooks/use-leads";
 import { useNow } from "@/hooks/use-now";
-import type { Lead, LeadList } from "@/lib/api";
-import { STATUSES, statusLabel } from "@/lib/status";
-import { browserTimeZone, formatLongDate } from "@/lib/time";
+import { ApiError, api, type Lead, type LeadList, type Mutation } from "@/lib/api";
+import { QUIET_DAYS, attentionReasons, describeReason } from "@/lib/attention";
+import { leadsToCsv } from "@/lib/csv";
+import { matchesSearch } from "@/lib/search";
+import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
+import { browserTimeZone, formatLongDate, formatWhen, toDateInput } from "@/lib/time";
 
 import { AddLeadDialog } from "./add-lead-dialog";
 import { Agenda } from "./agenda";
 import { LeadCard } from "./lead-card";
-import { LeadDialog, type DialogSession } from "./lead-dialog";
+import { LeadDialog, type DialogSession, type ExternalMutation } from "./lead-dialog";
 import { FirstUse, LoadError, LoadingList, NoResults, StaleBar } from "./list-states";
 
-type ReminderFilter = "any" | "today" | "overdue";
+type ReminderFilter = "any" | "today" | "overdue" | "attention";
 
 const isOverdue = (lead: Lead, now: Date) => Boolean(lead.next_follow_up_at && new Date(lead.next_follow_up_at) < now);
 
@@ -33,7 +36,18 @@ function byReminder(view: LeadList, reminder: ReminderFilter, now: Date): LeadLi
   if (reminder === "overdue") {
     return { pinned: view.pinned.filter((l) => isOverdue(l, now)), leads: view.leads.filter((l) => isOverdue(l, now)) };
   }
+  if (reminder === "attention") {
+    const needs = (l: Lead) => attentionReasons(l, now).length > 0;
+    return { pinned: view.pinned.filter(needs), leads: view.leads.filter(needs) };
+  }
   return view;
+}
+
+/** Attention reasons to show on a card; overdue is already shown in red, so it's left out. */
+function reasonLabels(lead: Lead, now: Date): string[] {
+  return attentionReasons(lead, now)
+    .filter((reason) => reason !== "overdue")
+    .map((reason) => describeReason(reason, lead, now));
 }
 
 function counts(all: LeadList | null, now: Date | null) {
@@ -43,7 +57,8 @@ function counts(all: LeadList | null, now: Date | null) {
   const overdue = now
     ? leads.filter((lead) => lead.next_follow_up_at && new Date(lead.next_follow_up_at) < now).length
     : 0;
-  return { total: leads.length, byStatus, dueToday: all?.pinned.length ?? 0, overdue };
+  const attention = now ? leads.filter((lead) => attentionReasons(lead, now).length > 0).length : 0;
+  return { total: leads.length, byStatus, dueToday: all?.pinned.length ?? 0, overdue, attention };
 }
 
 /** A number that pops briefly when its value changes (not on first render). */
@@ -73,6 +88,8 @@ export function LeadFlowApp() {
   const [dialog, setDialog] = useState<DialogSession | null>(null);
   const [lastDialog, setLastDialog] = useState<DialogSession | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // The latest Snooze result, so an open dialog for that lead shows it too.
+  const [cardMutation, setCardMutation] = useState<ExternalMutation | null>(null);
   const drafts = useDrafts();
   // Leads changed while their dialog was open get a short highlight once it closes.
   const [flash, setFlash] = useState<Record<number, number>>({});
@@ -146,12 +163,49 @@ export function LeadFlowApp() {
     else toast.error("Still couldn't refresh the list. Try again in a moment.");
   };
 
+  /**
+   * Snooze from a card. Focus goes back to the lead's card, or, when the filters now hide it, to
+   * its neighbour in the list, then the active reminder filter, then the page heading. A failed
+   * request leaves focus on the Snooze button.
+   */
+  const snooze = async (lead: Lead, at: Date) => {
+    const order = [...document.querySelectorAll<HTMLElement>("[data-lead-id]")].map((el) => el.dataset.leadId);
+    let mutation: Mutation;
+    try {
+      mutation = await api.setFollowUp(lead.id, at.toISOString());
+    } catch (error) {
+      toast.error("Couldn't snooze the follow-up.", {
+        description: error instanceof ApiError ? error.message : undefined,
+      });
+      document.querySelector<HTMLElement>(`[data-snooze-for="${lead.id}"]`)?.focus();
+      return;
+    }
+    if (mutation.entry === null) {
+      toast(`Follow-up for ${lead.name} is already scheduled for ${formatWhen(at, new Date())}.`);
+    } else {
+      setCardMutation({ mutation, at: Date.now() });
+      await afterChange(`Follow-up for ${lead.name} moved to ${formatWhen(at, new Date())}.`);
+      flashLeads([lead.id]);
+    }
+    // Wait for the refreshed list to render; the card may have moved sections or been filtered out.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A dialog opened meanwhile keeps focus; it shows the change itself.
+    if (document.querySelector("[role='dialog'], [role='alertdialog']")) return;
+    const here = order.indexOf(String(lead.id));
+    const candidates = [String(lead.id), ...order.slice(here + 1), ...order.slice(0, Math.max(here, 0)).reverse()];
+    const target =
+      candidates.map((id) => document.querySelector<HTMLElement>(`[data-lead-id="${id}"]`)).find(Boolean) ??
+      document.querySelector<HTMLElement>('[data-reminder-filter][aria-pressed="true"]') ??
+      document.querySelector<HTMLElement>("main h1");
+    target?.focus();
+  };
+
   const onCreated = async (lead: Lead) => {
-    const q = query.trim().toLowerCase();
     const hiddenByStatus = status !== "all" && status !== lead.status;
-    // A new lead has no follow-up yet, so the Due today and Overdue filters always hide it.
-    const hiddenByReminder = reminder !== "any";
-    const hiddenBySearch = q !== "" && !`${lead.name} ${lead.company ?? ""}`.toLowerCase().includes(q);
+    // A new lead has no follow-up yet, so Due today and Overdue always hide it (Needs attention
+    // shows it: an open lead with no follow-up needs one).
+    const hiddenByReminder = reminder === "today" || reminder === "overdue";
+    const hiddenBySearch = !matchesSearch(lead, query);
     if (hiddenByStatus || hiddenByReminder || hiddenBySearch) {
       const reason = hiddenByStatus
         ? `the ${statusLabel(status as Lead["status"])} filter`
@@ -170,8 +224,41 @@ export function LeadFlowApp() {
   const filtered = status !== "all" || query.trim() !== "" || reminder !== "any";
   const leadsNoun = status === "all" ? "leads" : `${statusLabel(status)} leads`;
   const emptyDescription =
-    (reminder === "today" ? `No ${leadsNoun} due today` : reminder === "overdue" ? `No overdue ${leadsNoun}` : `No ${leadsNoun}`) +
+    (reminder === "today"
+      ? `No ${leadsNoun} due today`
+      : reminder === "overdue"
+        ? `No overdue ${leadsNoun}`
+        : reminder === "attention"
+          ? `No ${leadsNoun} need attention`
+          : `No ${leadsNoun}`) +
     (query.trim() ? ` match \u201c${query.trim()}\u201d` : "");
+  /** Download the leads on screen (current filters, screen order) as CSV. */
+  const exportCsv = () => {
+    if (!view || !now) {
+      toast("The list is still loading. Try again in a moment.");
+      return;
+    }
+    const rows = [...view.pinned, ...view.leads];
+    if (!rows.length) {
+      toast("Nothing to export with these filters.");
+      return;
+    }
+    const csv = leadsToCsv(rows, {
+      statusLabel: (value) => statusLabel(value as LeadStatus),
+      timeZone: timeZone ?? "UTC",
+      now,
+    });
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `leadflow-leads-${toDateInput(now)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast.success(`Exported ${rows.length} lead${rows.length === 1 ? "" : "s"}.`);
+  };
+
   const toggleReminder = (value: ReminderFilter) => setReminder((current) => (current === value ? "any" : value));
   const nothingToShow = view !== null && view.pinned.length === 0 && view.leads.length === 0;
   const filterOptions = [
@@ -205,6 +292,16 @@ export function LeadFlowApp() {
             </kbd>
           </label>
           <Button
+            variant="outline"
+            onClick={exportCsv}
+            aria-label="Export the leads shown as CSV"
+            title="Export the leads shown as CSV"
+            className="h-10 bg-card px-3 text-sm font-semibold max-sm:size-10 max-sm:px-0"
+          >
+            <Download aria-hidden="true" />
+            <span className="max-sm:sr-only">Export CSV</span>
+          </Button>
+          <Button
             onClick={() => setAddOpen(true)}
             aria-keyshortcuts="N"
             title="Add lead (N)"
@@ -217,7 +314,7 @@ export function LeadFlowApp() {
 
       <main className="mx-auto max-w-[1040px] px-4 pb-16 sm:px-6">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 pt-7 pb-3.5">
-          <h1 className="min-h-9 text-[23px] font-bold tracking-tight sm:text-[28px]">
+          <h1 tabIndex={-1} className="min-h-9 text-[23px] font-bold tracking-tight outline-none sm:text-[28px]">
             {now ? formatLongDate(now) : ""}
           </h1>
           {leads.all && (
@@ -225,7 +322,8 @@ export function LeadFlowApp() {
               Across all leads:
               <button
                 type="button"
-                aria-pressed={reminder === "today"}
+                data-reminder-filter
+            aria-pressed={reminder === "today"}
                 onClick={() => toggleReminder("today")}
                 className={cn(
                   "rounded-md px-1.5 py-0.5 underline-offset-3 hover:underline",
@@ -237,7 +335,8 @@ export function LeadFlowApp() {
               and
               <button
                 type="button"
-                aria-pressed={reminder === "overdue"}
+                data-reminder-filter
+            aria-pressed={reminder === "overdue"}
                 onClick={() => toggleReminder("overdue")}
                 className={cn(
                   "rounded-md px-1.5 py-0.5 text-overdue underline-offset-3 hover:underline",
@@ -260,6 +359,22 @@ export function LeadFlowApp() {
               size="lg"
             />
           </div>
+          <button
+            type="button"
+            data-reminder-filter
+            aria-pressed={reminder === "attention"}
+            onClick={() => toggleReminder("attention")}
+            className={cn(
+              "inline-flex h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              reminder === "attention"
+                ? "border-stale-foreground/40 bg-stale text-stale-foreground"
+                : "border-border bg-card text-body hover:border-input",
+            )}
+          >
+            <CircleAlert aria-hidden="true" className="size-4" />
+            Needs attention
+            <span className="rounded-full bg-stale px-2 text-xs text-stale-foreground tabular-nums">{c.attention}</span>
+          </button>
           {filtered && (
             <button
               type="button"
@@ -270,6 +385,13 @@ export function LeadFlowApp() {
             </button>
           )}
         </div>
+
+        {reminder === "attention" && (
+          <p className="-mt-3 mb-5 text-sm text-muted-foreground">
+            Open leads with an overdue follow-up, no follow-up scheduled, or no discussion in the last {QUIET_DAYS}{" "}
+            days.
+          </p>
+        )}
 
         {leads.stale && <StaleBar onRefresh={() => void retryRefresh()} />}
 
@@ -284,12 +406,23 @@ export function LeadFlowApp() {
         ) : (
           view && (
             <>
-              {view.pinned.length > 0 && <Agenda leads={view.pinned} now={now} onOpen={openLead} flash={flash} />}
+              {view.pinned.length > 0 && (
+                <Agenda
+                  leads={view.pinned}
+                  now={now}
+                  onOpen={openLead}
+                  flash={flash}
+                  reasonsFor={reminder === "attention" ? (lead) => reasonLabels(lead, now) : undefined}
+                  onSnooze={snooze}
+                />
+              )}
               {view.leads.length > 0 && (
                 <section aria-labelledby="other-heading">
                   <h2 id="other-heading" className="mb-2.5 text-[15px] font-semibold">
                     {reminder === "overdue"
                       ? "Overdue from earlier days"
+                      : reminder === "attention"
+                        ? "Needs attention"
                       : view.pinned.length > 0
                         ? "Other leads"
                         : status === "all"
@@ -299,7 +432,15 @@ export function LeadFlowApp() {
                   <ul className="flex flex-col gap-2">
                     {view.leads.map((lead) => (
                       <li key={lead.id}>
-                        <LeadCard lead={lead} now={now} variant="list" onOpen={openLead} flashToken={flash[lead.id]} />
+                        <LeadCard
+                          lead={lead}
+                          now={now}
+                          variant="list"
+                          onOpen={openLead}
+                          flashToken={flash[lead.id]}
+                          reasons={reminder === "attention" ? reasonLabels(lead, now) : undefined}
+                          onSnooze={snooze}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -322,6 +463,7 @@ export function LeadFlowApp() {
         onClose={closeLead}
         listStale={leads.stale}
         onRefreshList={retryRefresh}
+        externalMutation={cardMutation}
         onChanged={(leadId, message) => {
           changedWhileOpen.current.add(leadId);
           return afterChange(message);

@@ -117,7 +117,9 @@ def test_default_timezone_is_utc(client, clock):
     assert names(response.json()["pinned"]) == ["utc today"]
 
 
-@pytest.mark.parametrize("tz", ["Mars/Base", "../etc/passwd", "Not A Zone"])
+@pytest.mark.parametrize(
+    "tz", ["Mars/Base", "../etc/passwd", "Not A Zone", "America", "Etc", "Asia/Kolkata/"]
+)
 def test_invalid_timezone(client, tz):
     error = assert_error(client.get("/api/leads", params={"tz": tz}), 422, "invalid_timezone")
     assert error["details"] == [{"field": "tz", "message": "Unknown IANA timezone."}]
