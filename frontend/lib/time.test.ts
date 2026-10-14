@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import {
   dayOffset,
   followUpShortcuts,
+  snoozeShortcuts,
   formatAgo,
   formatOffset,
   formatWhen,
@@ -119,5 +120,21 @@ describe("followUpShortcuts", () => {
   it("drops 'later today' late in the evening and avoids duplicating tomorrow", () => {
     const sundayNight = new Date(2026, 9, 18, 22, 30);
     assert.deepEqual(labels(sundayNight), ["Tomorrow, 10 AM"]);
+  });
+});
+
+describe("snoozeShortcuts", () => {
+  const labels = (current: Date | null) => snoozeShortcuts(NOW, current).map((s) => s.label);
+
+  it("offers every shortcut for an overdue follow-up", () => {
+    assert.deepEqual(labels(new Date(2026, 9, 14, 9, 0)), ["Later today, 2:45 PM", "Tomorrow, 10 AM", "Next Mon, 10 AM"]);
+  });
+
+  it("never moves a follow-up later today to an earlier time", () => {
+    assert.deepEqual(labels(new Date(2026, 9, 14, 18, 0)), ["Tomorrow, 10 AM", "Next Mon, 10 AM"]);
+  });
+
+  it("keeps the choice equal to the current follow-up", () => {
+    assert.deepEqual(labels(new Date(2026, 9, 14, 14, 45)), ["Later today, 2:45 PM", "Tomorrow, 10 AM", "Next Mon, 10 AM"]);
   });
 });

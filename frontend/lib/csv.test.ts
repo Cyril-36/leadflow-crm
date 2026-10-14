@@ -39,6 +39,7 @@ describe("csvCell", () => {
 });
 
 describe("leadsToCsv", () => {
+  const NOW = new Date("2026-10-14T06:00:00Z");
   const lead = {
     name: "Ananya Rao",
     company: "Kestrel Logistics",
@@ -46,12 +47,11 @@ describe("leadsToCsv", () => {
     status: "proposal_sent",
     last_note: { body: "Sent pricing, waiting on finance.", at: "2026-10-14T04:45:00Z" },
     next_follow_up_at: "2026-10-14T09:30:00Z",
-    follow_up_overdue: false,
     created_at: "2026-10-07T03:32:00Z",
   };
 
   it("writes a header and one row per lead, in local time", () => {
-    const csv = leadsToCsv([lead], { statusLabel: () => "Proposal Sent", timeZone: "Asia/Kolkata" });
+    const csv = leadsToCsv([lead], { statusLabel: () => "Proposal Sent", timeZone: "Asia/Kolkata", now: NOW });
     assert.ok(csv.startsWith("﻿"));
     const lines = csv.slice(1).trimEnd().split("\r\n");
     assert.equal(lines.length, 2);
@@ -63,6 +63,14 @@ describe("leadsToCsv", () => {
       lines[1],
       'Ananya Rao,Kestrel Logistics,,Proposal Sent,"Sent pricing, waiting on finance.",2026-10-14 10:15,2026-10-14 15:00,No,2026-10-07 09:02',
     );
+  });
+
+  it("marks a follow-up overdue by the screen's clock, not a cached server flag", () => {
+    const due = { ...lead, next_follow_up_at: "2026-10-14T06:00:30Z", follow_up_overdue: false };
+    const row = (now: Date) =>
+      leadsToCsv([due], { statusLabel: () => "Proposal Sent", timeZone: "UTC", now }).split("\r\n")[1];
+    assert.match(row(NOW), /,No,/);
+    assert.match(row(new Date("2026-10-14T06:01:00Z")), /,Yes,/);
   });
 
   it("formats times in the requested zone, across a DST change", () => {

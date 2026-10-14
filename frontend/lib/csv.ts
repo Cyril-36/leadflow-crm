@@ -8,13 +8,14 @@ export interface CsvLead {
   status: string;
   last_note: { body: string; at: string } | null;
   next_follow_up_at: string | null;
-  follow_up_overdue: boolean;
   created_at: string;
 }
 
 export interface CsvOptions {
   statusLabel: (status: string) => string;
   timeZone: string;
+  /** The time the screen uses, so "overdue" in the file matches the cards. */
+  now: Date;
 }
 
 /**
@@ -52,7 +53,7 @@ export function localDateTime(iso: string, timeZone: string): string {
 }
 
 /** The leads as a CSV document: UTF-8 byte-order mark (for Excel), CRLF line endings. */
-export function leadsToCsv(leads: CsvLead[], { statusLabel, timeZone }: CsvOptions): string {
+export function leadsToCsv(leads: CsvLead[], { statusLabel, timeZone, now }: CsvOptions): string {
   const header = [
     "Name",
     "Company",
@@ -72,7 +73,7 @@ export function leadsToCsv(leads: CsvLead[], { statusLabel, timeZone }: CsvOptio
     lead.last_note?.body ?? "",
     lead.last_note ? localDateTime(lead.last_note.at, timeZone) : "",
     lead.next_follow_up_at ? localDateTime(lead.next_follow_up_at, timeZone) : "",
-    lead.follow_up_overdue ? "Yes" : "No",
+    lead.next_follow_up_at && Date.parse(lead.next_follow_up_at) < now.getTime() ? "Yes" : "No",
     localDateTime(lead.created_at, timeZone),
   ]);
   return "﻿" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";

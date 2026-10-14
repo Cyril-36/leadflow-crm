@@ -16,6 +16,7 @@ import { useNow } from "@/hooks/use-now";
 import { ApiError, api, type Lead, type LeadList, type Mutation } from "@/lib/api";
 import { QUIET_DAYS, attentionReasons, describeReason } from "@/lib/attention";
 import { leadsToCsv } from "@/lib/csv";
+import { matchesSearch } from "@/lib/search";
 import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
 import { browserTimeZone, formatLongDate, formatWhen, toDateInput } from "@/lib/time";
 
@@ -195,12 +196,11 @@ export function LeadFlowApp() {
   };
 
   const onCreated = async (lead: Lead) => {
-    const q = query.trim().toLowerCase();
     const hiddenByStatus = status !== "all" && status !== lead.status;
     // A new lead has no follow-up yet, so Due today and Overdue always hide it (Needs attention
     // shows it: an open lead with no follow-up needs one).
     const hiddenByReminder = reminder === "today" || reminder === "overdue";
-    const hiddenBySearch = q !== "" && !`${lead.name} ${lead.company ?? ""}`.toLowerCase().includes(q);
+    const hiddenBySearch = !matchesSearch(lead, query);
     if (hiddenByStatus || hiddenByReminder || hiddenBySearch) {
       const reason = hiddenByStatus
         ? `the ${statusLabel(status as Lead["status"])} filter`
@@ -229,7 +229,10 @@ export function LeadFlowApp() {
     (query.trim() ? ` match \u201c${query.trim()}\u201d` : "");
   /** Download the leads on screen (current filters, screen order) as CSV. */
   const exportCsv = () => {
-    if (!view || !now) return;
+    if (!view || !now) {
+      toast("The list is still loading. Try again in a moment.");
+      return;
+    }
     const rows = [...view.pinned, ...view.leads];
     if (!rows.length) {
       toast("Nothing to export with these filters.");
@@ -238,6 +241,7 @@ export function LeadFlowApp() {
     const csv = leadsToCsv(rows, {
       statusLabel: (value) => statusLabel(value as LeadStatus),
       timeZone: timeZone ?? "UTC",
+      now,
     });
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");

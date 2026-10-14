@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Lead } from "@/lib/api";
-import { followUpShortcuts } from "@/lib/time";
+import { snoozeShortcuts } from "@/lib/time";
 
 interface SnoozeMenuProps {
   lead: Lead;
@@ -23,7 +23,7 @@ interface SnoozeMenuProps {
 /** One-click "move this follow-up" from a card: later today, tomorrow, next working day. */
 export function SnoozeMenu({ lead, now, onSnooze }: SnoozeMenuProps) {
   const [busy, setBusy] = useState(false);
-  const current = lead.next_follow_up_at ? new Date(lead.next_follow_up_at).getTime() : null;
+  const current = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
 
   return (
     <DropdownMenu>
@@ -44,8 +44,8 @@ export function SnoozeMenu({ lead, now, onSnooze }: SnoozeMenuProps) {
       {/* Radix returns focus to this trigger on close; after the request the app moves it on. */}
       <DropdownMenuContent align="end" className="min-w-56">
         <DropdownMenuLabel>Move the follow-up to</DropdownMenuLabel>
-        {followUpShortcuts(now).map((option) => {
-          const alreadySet = option.at.getTime() === current;
+        {snoozeShortcuts(now, current).map((option) => {
+          const alreadySet = option.at.getTime() === current?.getTime();
           return (
             <DropdownMenuItem
               key={option.label}

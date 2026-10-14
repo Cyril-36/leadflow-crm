@@ -158,6 +158,15 @@ export function followUpShortcuts(now: Date): Shortcut[] {
   return shortcuts;
 }
 
+/**
+ * Snooze choices for a follow-up: the shortcuts that don't move it earlier. One equal to the
+ * current follow-up is kept (the menu shows it as already set).
+ */
+export function snoozeShortcuts(now: Date, current: Date | null): Shortcut[] {
+  const shortcuts = followUpShortcuts(now);
+  return current ? shortcuts.filter((s) => s.at.getTime() >= current.getTime()) : shortcuts;
+}
+
 /** The browser's IANA timezone, e.g. "Asia/Kolkata". */
 export function browserTimeZone(): string {
   try {
