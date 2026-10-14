@@ -16,9 +16,17 @@ describe("csvCell", () => {
 
   it("neutralises values a spreadsheet would run as a formula", () => {
     assert.equal(csvCell("=HYPERLINK(\"http://x\")"), '"\'=HYPERLINK(""http://x"")"');
-    assert.equal(csvCell("+91 555 0101"), "'+91 555 0101");
-    assert.equal(csvCell("-5"), "'-5");
     assert.equal(csvCell("@SUM(A1)"), "'@SUM(A1)");
+    assert.equal(csvCell("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0");
+    assert.equal(csvCell("-2+SUM(A1:A9)"), "'-2+SUM(A1:A9)");
+    assert.equal(csvCell("+"), "'+");
+  });
+
+  it("leaves phone numbers alone, even with a leading + or -", () => {
+    assert.equal(csvCell("+91 98765 43210"), "+91 98765 43210");
+    assert.equal(csvCell("+1 (555) 010-1234"), "+1 (555) 010-1234");
+    assert.equal(csvCell("-5"), "-5");
+    assert.equal(csvCell("555-0107"), "555-0107");
   });
 });
 

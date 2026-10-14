@@ -17,12 +17,16 @@ export interface CsvOptions {
   timeZone: string;
 }
 
+/** Phone-like values (digits, spaces, + - . and brackets) can't hold a function or a cell reference. */
+const PHONE_LIKE = /^[0-9 ()+\-.]*[0-9][0-9 ()+\-.]*$/;
+
 /**
  * One CSV field (RFC 4180). Values a spreadsheet would treat as a formula (starting with =, +, -,
- * @, tab or carriage return) are prefixed with an apostrophe so they stay plain text.
+ * @, tab or carriage return) are prefixed with an apostrophe so they stay plain text, except
+ * phone-like values such as "+91 98765 43210", which would otherwise show the apostrophe.
  */
 export function csvCell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  const safe = /^[=+\-@\t\r]/.test(value) && !PHONE_LIKE.test(value) ? `'${value}` : value;
   return /[",\r\n]|^\s|\s$/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 

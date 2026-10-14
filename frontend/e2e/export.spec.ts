@@ -2,10 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 
-import { createLead } from "./helpers";
+import { API, createLead } from "./helpers";
 
 test("Export CSV downloads the leads shown, with the active filters", async ({ page, request }) => {
   const lead = await createLead(request, "Export lead, with comma");
+  const details = { name: lead.name, company: "E2E Test Co", phone: "+91 98765 43210" };
+  expect((await request.patch(`${API}/leads/${lead.id}/details`, { data: details })).ok()).toBe(true);
   await page.goto("/");
   await expect(page.locator(`[data-lead-id="${lead.id}"]`)).toBeVisible();
   const shown = await page.locator("[data-lead-id]").count();
@@ -18,7 +20,8 @@ test("Export CSV downloads the leads shown, with the active filters", async ({ p
   const lines = (await readFile(await download.path(), "utf8")).replace(/^﻿/, "").trimEnd().split("\r\n");
   expect(lines[0]).toMatch(/^Name,Company,Phone,Status,Last discussion,/);
   expect(lines).toHaveLength(shown + 1);
-  expect(lines.some((line) => line.startsWith(`"${lead.name}",E2E Test Co,,New,`))).toBe(true);
+  // A phone number stays as typed: no formula-guard apostrophe.
+  expect(lines.some((line) => line.startsWith(`"${lead.name}",E2E Test Co,+91 98765 43210,New,`))).toBe(true);
   await expect(page.getByText(`Exported ${shown} leads.`)).toBeVisible();
 
   // With a filter on, only the filtered leads are exported.
