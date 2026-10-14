@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, Plus, Search, TrendingUp } from "lucide-react";
+import { CircleAlert, Download, Plus, Search, TrendingUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -15,8 +15,9 @@ import { useLeads, type StatusFilter } from "@/hooks/use-leads";
 import { useNow } from "@/hooks/use-now";
 import { ApiError, api, type Lead, type LeadList } from "@/lib/api";
 import { QUIET_DAYS, attentionReasons, describeReason } from "@/lib/attention";
-import { STATUSES, statusLabel } from "@/lib/status";
-import { browserTimeZone, formatLongDate, formatWhen } from "@/lib/time";
+import { leadsToCsv } from "@/lib/csv";
+import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
+import { browserTimeZone, formatLongDate, formatWhen, toDateInput } from "@/lib/time";
 
 import { AddLeadDialog } from "./add-lead-dialog";
 import { Agenda } from "./agenda";
@@ -209,6 +210,29 @@ export function LeadFlowApp() {
           ? `No ${leadsNoun} need attention`
           : `No ${leadsNoun}`) +
     (query.trim() ? ` match \u201c${query.trim()}\u201d` : "");
+  /** Download the leads on screen (current filters, screen order) as CSV. */
+  const exportCsv = () => {
+    if (!view || !now) return;
+    const rows = [...view.pinned, ...view.leads];
+    if (!rows.length) {
+      toast("Nothing to export with these filters.");
+      return;
+    }
+    const csv = leadsToCsv(rows, {
+      statusLabel: (value) => statusLabel(value as LeadStatus),
+      timeZone: timeZone ?? "UTC",
+    });
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `leadflow-leads-${toDateInput(now)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast.success(`Exported ${rows.length} lead${rows.length === 1 ? "" : "s"}.`);
+  };
+
   const toggleReminder = (value: ReminderFilter) => setReminder((current) => (current === value ? "any" : value));
   const nothingToShow = view !== null && view.pinned.length === 0 && view.leads.length === 0;
   const filterOptions = [
@@ -241,6 +265,16 @@ export function LeadFlowApp() {
               /
             </kbd>
           </label>
+          <Button
+            variant="outline"
+            onClick={exportCsv}
+            aria-label="Export the leads shown as CSV"
+            title="Export the leads shown as CSV"
+            className="h-10 bg-card px-3 text-sm font-semibold max-sm:size-10 max-sm:px-0"
+          >
+            <Download aria-hidden="true" />
+            <span className="max-sm:sr-only">Export CSV</span>
+          </Button>
           <Button
             onClick={() => setAddOpen(true)}
             aria-keyshortcuts="N"

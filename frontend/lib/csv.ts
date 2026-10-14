@@ -1,0 +1,72 @@
+// CSV export of the leads on screen. Import-free so Node's test runner can load it directly
+// (lib/csv.test.ts).
+
+export interface CsvLead {
+  name: string;
+  company: string | null;
+  phone: string | null;
+  status: string;
+  last_note: { body: string; at: string } | null;
+  next_follow_up_at: string | null;
+  follow_up_overdue: boolean;
+  created_at: string;
+}
+
+export interface CsvOptions {
+  statusLabel: (status: string) => string;
+  timeZone: string;
+}
+
+/**
+ * One CSV field (RFC 4180). Values a spreadsheet would treat as a formula (starting with =, +, -,
+ * @, tab or carriage return) are prefixed with an apostrophe so they stay plain text.
+ */
+export function csvCell(value: string): string {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]|^\s|\s$/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+}
+
+/** "2026-10-14 15:00" in the given time zone, so the file reads the same as the screen. */
+export function localDateTime(iso: string, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(iso))
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+/** The leads as a CSV document: UTF-8 byte-order mark (for Excel), CRLF line endings. */
+export function leadsToCsv(leads: CsvLead[], { statusLabel, timeZone }: CsvOptions): string {
+  const header = [
+    "Name",
+    "Company",
+    "Phone",
+    "Status",
+    "Last discussion",
+    `Last discussion at (${timeZone})`,
+    `Next follow-up (${timeZone})`,
+    "Follow-up overdue",
+    `Added (${timeZone})`,
+  ];
+  const rows = leads.map((lead) => [
+    lead.name,
+    lead.company ?? "",
+    lead.phone ?? "",
+    statusLabel(lead.status),
+    lead.last_note?.body ?? "",
+    lead.last_note ? localDateTime(lead.last_note.at, timeZone) : "",
+    lead.next_follow_up_at ? localDateTime(lead.next_follow_up_at, timeZone) : "",
+    lead.follow_up_overdue ? "Yes" : "No",
+    localDateTime(lead.created_at, timeZone),
+  ]);
+  return "﻿" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
