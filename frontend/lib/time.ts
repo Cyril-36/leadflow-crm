@@ -122,24 +122,39 @@ export function parseFollowUp(dateValue: string, timeValue: string, now: Date): 
   return { ok: true, date };
 }
 
-export type Shortcut = { label: string; date: string; time: string };
+export type Shortcut = { label: string; date: string; time: string; at: Date };
 
-/** Quick follow-up choices: later today (+2 h, next quarter hour), tomorrow 10 AM, next Monday 10 AM. */
+function shortcut(label: string, at: Date): Shortcut {
+  return { label, date: toDateInput(at), time: toTimeInput(at), at };
+}
+
+const sameDay = (a: Date, b: Date) => dayOffset(a, b) === 0;
+
+/**
+ * Quick follow-up choices, used by the note composer and Snooze: later today (+2 h, next quarter
+ * hour), tomorrow 10 AM, the next working day when tomorrow is a weekend, and next Monday when
+ * that's a different day again.
+ */
 export function followUpShortcuts(now: Date): Shortcut[] {
   const shortcuts: Shortcut[] = [];
   const later = new Date(now.getTime() + 2 * 3_600_000);
   later.setSeconds(0, 0);
   later.setMinutes(Math.ceil(later.getMinutes() / 15) * 15);
-  if (dayOffset(later, now) === 0) {
-    shortcuts.push({ label: `Later today, ${formatTime(later)}`, date: toDateInput(later), time: toTimeInput(later) });
+  if (dayOffset(later, now) === 0) shortcuts.push(shortcut(`Later today, ${formatTime(later)}`, later));
+
+  const at10 = (days: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 10, 0);
+  const tomorrow = at10(1);
+  shortcuts.push(shortcut("Tomorrow, 10 AM", tomorrow));
+
+  let workday = 1;
+  while ([0, 6].includes(at10(workday).getDay())) workday += 1;
+  const nextWorkday = at10(workday);
+  if (!sameDay(nextWorkday, tomorrow)) {
+    shortcuts.push(shortcut(`Next working day, ${DAYS[nextWorkday.getDay()]} 10 AM`, nextWorkday));
   }
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 10, 0);
-  shortcuts.push({ label: "Tomorrow, 10 AM", date: toDateInput(tomorrow), time: "10:00" });
-  const daysToMonday = ((8 - now.getDay()) % 7) || 7;
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToMonday, 10, 0);
-  if (daysToMonday !== 1) {
-    shortcuts.push({ label: "Next Mon, 10 AM", date: toDateInput(monday), time: "10:00" });
-  }
+
+  const monday = at10(((8 - now.getDay()) % 7) || 7);
+  if (!sameDay(monday, tomorrow) && !sameDay(monday, nextWorkday)) shortcuts.push(shortcut("Next Mon, 10 AM", monday));
   return shortcuts;
 }
 

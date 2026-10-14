@@ -94,19 +94,30 @@ describe("relative formatting follows the calendar", () => {
 });
 
 describe("followUpShortcuts", () => {
-  it("offers later today, tomorrow and next Monday", () => {
-    assert.deepEqual(followUpShortcuts(NOW), [
-      { label: "Later today, 2:45 PM", date: "2026-10-14", time: "14:45" },
-      { label: "Tomorrow, 10 AM", date: "2026-10-15", time: "10:00" },
-      { label: "Next Mon, 10 AM", date: "2026-10-19", time: "10:00" },
-    ]);
+  const labels = (now: Date) => followUpShortcuts(now).map((s) => s.label);
+
+  it("offers later today, tomorrow and next Monday midweek", () => {
+    const shortcuts = followUpShortcuts(NOW);
+    assert.deepEqual(
+      shortcuts.map(({ label, date, time }) => ({ label, date, time })),
+      [
+        { label: "Later today, 2:45 PM", date: "2026-10-14", time: "14:45" },
+        { label: "Tomorrow, 10 AM", date: "2026-10-15", time: "10:00" },
+        { label: "Next Mon, 10 AM", date: "2026-10-19", time: "10:00" },
+      ],
+    );
+    assert.equal(shortcuts[1].at.getTime(), new Date(2026, 9, 15, 10, 0).getTime());
+  });
+
+  it("adds the next working day when tomorrow is a weekend, without repeating Monday", () => {
+    const friday = new Date(2026, 9, 16, 9, 0);
+    assert.deepEqual(labels(friday), ["Later today, 11:00 AM", "Tomorrow, 10 AM", "Next working day, Mon 10 AM"]);
+    const saturday = new Date(2026, 9, 17, 22, 30);
+    assert.deepEqual(labels(saturday), ["Tomorrow, 10 AM", "Next working day, Mon 10 AM"]);
   });
 
   it("drops 'later today' late in the evening and avoids duplicating tomorrow", () => {
     const sundayNight = new Date(2026, 9, 18, 22, 30);
-    assert.deepEqual(
-      followUpShortcuts(sundayNight).map((s) => s.label),
-      ["Tomorrow, 10 AM"],
-    );
+    assert.deepEqual(labels(sundayNight), ["Tomorrow, 10 AM"]);
   });
 });

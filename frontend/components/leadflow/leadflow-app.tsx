@@ -13,10 +13,10 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useDrafts } from "@/hooks/use-drafts";
 import { useLeads, type StatusFilter } from "@/hooks/use-leads";
 import { useNow } from "@/hooks/use-now";
-import type { Lead, LeadList } from "@/lib/api";
+import { ApiError, api, type Lead, type LeadList } from "@/lib/api";
 import { QUIET_DAYS, attentionReasons, describeReason } from "@/lib/attention";
 import { STATUSES, statusLabel } from "@/lib/status";
-import { browserTimeZone, formatLongDate } from "@/lib/time";
+import { browserTimeZone, formatLongDate, formatWhen } from "@/lib/time";
 
 import { AddLeadDialog } from "./add-lead-dialog";
 import { Agenda } from "./agenda";
@@ -157,6 +157,23 @@ export function LeadFlowApp() {
   const retryRefresh = async () => {
     if ((await leads.refresh()) === "fresh") toast.success("List refreshed.");
     else toast.error("Still couldn't refresh the list. Try again in a moment.");
+  };
+
+  /** Snooze from a card: move the follow-up, refresh, then put focus back on that lead's card. */
+  const snooze = async (lead: Lead, at: Date) => {
+    try {
+      await api.setFollowUp(lead.id, at.toISOString());
+    } catch (error) {
+      toast.error("Couldn't snooze the follow-up.", {
+        description: error instanceof ApiError ? error.message : undefined,
+      });
+      return;
+    }
+    await afterChange(`Follow-up for ${lead.name} moved to ${formatWhen(at, new Date())}.`);
+    flashLeads([lead.id]);
+    // Wait for the refreshed list to render; the card may have moved sections.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    document.querySelector<HTMLElement>(`[data-lead-id="${lead.id}"]`)?.focus();
   };
 
   const onCreated = async (lead: Lead) => {
@@ -333,6 +350,7 @@ export function LeadFlowApp() {
                   onOpen={openLead}
                   flash={flash}
                   reasonsFor={reminder === "attention" ? (lead) => reasonLabels(lead, now) : undefined}
+                  onSnooze={snooze}
                 />
               )}
               {view.leads.length > 0 && (
@@ -358,6 +376,7 @@ export function LeadFlowApp() {
                           onOpen={openLead}
                           flashToken={flash[lead.id]}
                           reasons={reminder === "attention" ? reasonLabels(lead, now) : undefined}
+                          onSnooze={snooze}
                         />
                       </li>
                     ))}
