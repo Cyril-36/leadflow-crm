@@ -1,7 +1,8 @@
 """Demo data: 8 fictional leads with discussions, dates relative to now.
 
-    uv run python -m app.seed          # refuses to touch a database that already has leads
-    uv run python -m app.seed --reset  # wipes the database first
+    uv run python -m app.seed             # refuses to touch a database that already has leads
+    uv run python -m app.seed --if-empty  # seeds only an empty database, otherwise exits quietly
+    uv run python -m app.seed --reset     # wipes the database first
 
 Everything goes through the service layer, so the seed obeys the same rules as the API.
 """
@@ -184,7 +185,11 @@ def seed(session_factory: sessionmaker[Session], now: datetime) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load LeadFlow demo data.")
-    parser.add_argument("--reset", action="store_true", help="delete all existing data first")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--reset", action="store_true", help="delete all existing data first")
+    mode.add_argument(
+        "--if-empty", action="store_true", help="seed only an empty database; otherwise do nothing"
+    )
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -197,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     with session_factory() as session:
         existing = session.scalar(select(func.count()).select_from(Lead))
     if existing:
+        if args.if_empty:
+            print(f"The database already has {existing} leads; leaving it as it is.")
+            return 0
         print(f"The database already has {existing} leads. Re-run with --reset to replace them.")
         return 1
 

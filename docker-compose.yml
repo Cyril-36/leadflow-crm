@@ -1,0 +1,44 @@
+# One command runs LeadFlow: docker compose up --build
+#   App  http://localhost:3000
+#   API  http://localhost:8000/api  (docs at http://localhost:8000/docs)
+# Data lives in the leadflow-data volume and survives restarts; `docker compose down -v` deletes it.
+services:
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: sqlite:////data/leadflow.db
+      CORS_ORIGINS: http://localhost:3000
+      SEED_DEMO_DATA: "true" # 8 fictional leads on first start only
+      TZ: ${TZ:-UTC} # time zone the demo data is seeded in, e.g. TZ=Asia/Kolkata
+    ports:
+      - "8000:8000"
+    volumes:
+      - leadflow-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  leadflow-data:

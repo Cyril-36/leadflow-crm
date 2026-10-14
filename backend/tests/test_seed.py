@@ -61,3 +61,14 @@ def test_seed_uses_business_hours_during_the_working_day(app, client, clock):
         assert time(9) <= at.time() <= time(18), at
         assert at.minute % 15 == 0, at
         assert at.weekday() < 5, at
+
+
+def test_seed_cli_modes(db_url, monkeypatch, capsys):
+    from app.seed import main
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    assert main([]) == 0
+    assert main([]) == 1  # refuses a non-empty database
+    assert main(["--if-empty"]) == 0  # quietly leaves it alone
+    assert "leaving it as it is" in capsys.readouterr().out
+    assert main(["--reset"]) == 0

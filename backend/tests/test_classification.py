@@ -224,3 +224,17 @@ def test_search_combined_with_status(client):
 
 def test_search_too_long_is_rejected(client):
     assert_error(client.get("/api/leads", params={"q": "x" * 101}), 422, "validation_error")
+
+
+def test_legacy_zone_names_resolve_without_a_system_time_zone_database(client, clock):
+    # Some browsers report legacy names such as Asia/Calcutta, and slim containers or Windows may
+    # have no (or no legacy) system zone data. The tzdata dependency must cover both.
+    import zoneinfo
+
+    zoneinfo.reset_tzpath(to=[])
+    try:
+        zoneinfo.ZoneInfo.clear_cache()
+        assert listing(client, tz="Asia/Calcutta") == listing(client, tz="Asia/Kolkata")
+    finally:
+        zoneinfo.reset_tzpath()
+        zoneinfo.ZoneInfo.clear_cache()
