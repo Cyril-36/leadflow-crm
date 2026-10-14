@@ -18,7 +18,13 @@ export interface Lead {
   updated_at: string;
 }
 
-export type EntryKind = "note" | "lead_created" | "status_changed" | "follow_up_cleared";
+export type EntryKind =
+  | "note"
+  | "lead_created"
+  | "status_changed"
+  | "follow_up_cleared"
+  | "follow_up_set"
+  | "details_updated";
 
 export interface Entry {
   id: number;
@@ -53,6 +59,12 @@ export interface NewLead {
 export interface NewDiscussion {
   note: string;
   follow_up_at?: string;
+}
+
+export interface LeadDetails {
+  name?: string;
+  company?: string;
+  phone?: string;
 }
 
 export interface ListQuery {
@@ -144,5 +156,11 @@ export const api = {
   },
   clearFollowUp(id: number): Promise<Mutation> {
     return request(`/leads/${id}/follow-up`, { method: "DELETE" });
+  },
+  setFollowUp(id: number, followUpAt: string): Promise<Mutation> {
+    return request(`/leads/${id}/follow-up`, { method: "PUT", body: json({ follow_up_at: followUpAt }) });
+  },
+  updateDetails(id: number, details: LeadDetails): Promise<Mutation> {
+    return request(`/leads/${id}/details`, { method: "PATCH", body: json(details) });
   },
 };

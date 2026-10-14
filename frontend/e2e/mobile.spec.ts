@@ -15,7 +15,8 @@ async function expectEchoClearOfSaveBar(page: Page) {
   const dialog = page.getByRole("dialog");
   const echo = dialog.getByText(/^New follow-up:/);
   await echo.scrollIntoViewIfNeeded();
-  const save = dialog.getByRole("button", { name: "Save note" });
+  // Reads "Save follow-up" until a note is written, then "Save note".
+  const save = dialog.getByRole("button", { name: /^Save (note|follow-up)$/ });
   await expect(save).toBeInViewport();
   const echoBox = await rect(echo);
   const saveBarTop = (await rect(save.locator(".."))).top;

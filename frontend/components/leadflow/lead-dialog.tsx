@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Phone, X } from "lucide-react";
+import { Loader2, Pencil, Phone, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,11 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, api, isAbort, type Entry, type Lead, type Mutation } from "@/lib/api";
+import { ApiError, api, isAbort, type Entry, type Lead, type LeadDetails, type Mutation } from "@/lib/api";
 import { TaskQueue, mergeEntry, newerLead } from "@/lib/detail-state";
 import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
+import { formatWhen } from "@/lib/time";
 
 import { Composer } from "./composer";
+import { DetailsEditor } from "./details-editor";
 import { keepOpenForToasts } from "./toast-guard";
 import { Timeline } from "./timeline";
 
@@ -197,6 +199,8 @@ function LeadDialogBody({
   const [inFlight, setInFlight] = useState(0);
   const busy = inFlight > 0;
   const [refreshing, setRefreshing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const editButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -277,6 +281,32 @@ function LeadDialogBody({
     }
   };
 
+  const setFollowUp = async (lead: Lead, followUpAt: string): Promise<string | null> => {
+    try {
+      await mutate(() => api.setFollowUp(lead.id, followUpAt));
+      await onChanged(`Follow-up set for ${formatWhen(new Date(followUpAt), new Date())}.`);
+      return null;
+    } catch (error) {
+      const message = mutationError(error);
+      toast.error("Couldn't change the follow-up.", { description: message });
+      return message;
+    }
+  };
+
+  const saveDetails = async (lead: Lead, details: LeadDetails): Promise<Record<string, string>> => {
+    try {
+      await mutate(() => api.updateDetails(lead.id, details));
+      setEditing(false);
+      editButtonRef.current?.focus();
+      await onChanged("Details updated.");
+      return {};
+    } catch (error) {
+      if (error instanceof ApiError && error.details.length) return error.fieldErrors();
+      toast.error("Couldn't update the details.", { description: mutationError(error) });
+      return {};
+    }
+  };
+
   const markDone = async (lead: Lead) => {
     if (busy) return;
     try {
@@ -337,12 +367,37 @@ function LeadDialogBody({
             </Select>
           </div>
         )}
-        <DialogClose asChild>
-          <Button ref={closeRef} variant="ghost" size="icon-lg" aria-label="Close">
-            <X />
-          </Button>
-        </DialogClose>
+        <div className="flex items-center gap-1">
+          {lead && (
+            <Button
+              ref={editButtonRef}
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Edit details"
+              aria-expanded={editing}
+              onClick={() => setEditing((open) => !open)}
+            >
+              <Pencil />
+            </Button>
+          )}
+          <DialogClose asChild>
+            <Button ref={closeRef} variant="ghost" size="icon-lg" aria-label="Close">
+              <X />
+            </Button>
+          </DialogClose>
+        </div>
       </div>
+
+      {lead && editing && (
+        <DetailsEditor
+          lead={lead}
+          onSave={(details) => saveDetails(lead, details)}
+          onCancel={() => {
+            setEditing(false);
+            editButtonRef.current?.focus();
+          }}
+        />
+      )}
 
       {listStale && (
         <div role="status" className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 bg-stale px-4 py-2 text-sm text-stale-foreground sm:px-6">
@@ -376,6 +431,7 @@ function LeadDialogBody({
             onDraftChange={onDraftChange}
             onSave={(note, followUpAt, submittedDraft) => saveNote(lead, note, followUpAt, submittedDraft)}
             onMarkDone={() => markDone(lead)}
+            onSetFollowUp={(followUpAt) => setFollowUp(lead, followUpAt)}
             busy={busy}
             textareaRef={textareaRef}
           />

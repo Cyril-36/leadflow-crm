@@ -92,3 +92,13 @@ def test_utc_column_rejects_naive_datetimes():
         column.process_bind_param(datetime(2026, 1, 1), None)
     aware = datetime(2026, 1, 1, 12, tzinfo=UTC)
     assert column.process_result_value(column.process_bind_param(aware, None), None) == aware
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+def test_cors_allows_every_method_the_app_uses(client, method):
+    response = client.options(
+        "/api/leads/1/follow-up",
+        headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": method},
+    )
+    assert response.status_code == 200
+    assert method in response.headers.get("access-control-allow-methods", "")

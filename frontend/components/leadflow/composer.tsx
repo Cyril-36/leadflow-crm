@@ -21,6 +21,8 @@ interface ComposerProps {
    */
   onSave: (note: string, followUpAt: string | undefined, submittedDraft: string) => Promise<string | null>;
   onMarkDone: () => Promise<void>;
+  /** Move or set the follow-up on its own, without a note. Resolves like onSave. */
+  onSetFollowUp: (followUpAt: string) => Promise<string | null>;
   busy: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }
@@ -30,7 +32,18 @@ interface ComposerProps {
 const linkButton =
   "font-semibold whitespace-nowrap text-primary underline underline-offset-3 hover:text-primary-hover aria-disabled:cursor-progress aria-disabled:opacity-60";
 
-export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, onMarkDone, busy, textareaRef }: ComposerProps) {
+export function Composer({
+  lead,
+  now,
+  timeZone,
+  draft,
+  onDraftChange,
+  onSave,
+  onMarkDone,
+  onSetFollowUp,
+  busy,
+  textareaRef,
+}: ComposerProps) {
   const [editingFollowUp, setEditingFollowUp] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -48,20 +61,24 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
     setError(null);
   };
 
+  // With no note written, a chosen follow-up is saved on its own ("Save follow-up").
+  const followUpOnly = draft.trim() === "" && parsed !== null;
+
   const save = async () => {
     if (saving || busy) return;
     const note = draft.trim();
-    if (!note) {
-      setError("Write a note before saving.");
-      return;
-    }
     if (parsed && !parsed.ok) {
       setError(parsed.message);
       return;
     }
+    if (!note && !parsed) {
+      setError(editingFollowUp ? "Write a note or pick a follow-up time." : "Write a note before saving.");
+      return;
+    }
     setError(null);
     setSaving(true);
-    const failure = await onSave(note, parsed?.ok ? parsed.date.toISOString() : undefined, draft);
+    const followUpAt = parsed?.ok ? parsed.date.toISOString() : undefined;
+    const failure = note ? await onSave(note, followUpAt, draft) : await onSetFollowUp(followUpAt as string);
     setSaving(false);
     if (failure) setError(failure);
     else closeEditor();
@@ -178,7 +195,7 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
           className="h-10 px-4 text-[15px] aria-disabled:cursor-progress aria-disabled:opacity-70 max-sm:flex-1"
         >
           {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
-          {saving ? "Saving…" : "Save note"}
+          {saving ? "Saving…" : followUpOnly ? "Save follow-up" : "Save note"}
         </Button>
       </div>
     </div>

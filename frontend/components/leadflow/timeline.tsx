@@ -12,10 +12,10 @@ export function Timeline({ entries, now }: { entries: Entry[]; now: Date }) {
         const isNote = entry.kind === "note";
         const last = index === entries.length - 1;
         const followUp = entry.follow_up_at ? new Date(entry.follow_up_at) : null;
-        const body =
-          entry.kind === "follow_up_cleared" && followUp
-            ? `Follow-up for ${formatWhen(followUp, now)} marked done`
-            : entry.body;
+        let body = entry.body;
+        if (entry.kind === "follow_up_cleared" && followUp) body = `Follow-up for ${formatWhen(followUp, now)} marked done`;
+        if (entry.kind === "follow_up_set" && followUp)
+          body = `${entry.body === "Follow-up rescheduled" ? "Follow-up moved to" : "Follow-up set for"} ${formatWhen(followUp, now)}`;
         return (
           <li key={entry.id} className={cn("relative pl-7", isNote ? "pb-[18px]" : "pb-3")}>
             {!last && <span aria-hidden="true" className="absolute top-4 bottom-0 left-[5px] w-0.5 bg-border" />}
