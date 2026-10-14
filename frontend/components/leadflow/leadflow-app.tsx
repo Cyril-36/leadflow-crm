@@ -13,7 +13,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useDrafts } from "@/hooks/use-drafts";
 import { useLeads, type StatusFilter } from "@/hooks/use-leads";
 import { useNow } from "@/hooks/use-now";
-import { ApiError, api, type Lead, type LeadList } from "@/lib/api";
+import { ApiError, api, type Lead, type LeadList, type Mutation } from "@/lib/api";
 import { QUIET_DAYS, attentionReasons, describeReason } from "@/lib/attention";
 import { leadsToCsv } from "@/lib/csv";
 import { STATUSES, statusLabel, type LeadStatus } from "@/lib/status";
@@ -160,21 +160,38 @@ export function LeadFlowApp() {
     else toast.error("Still couldn't refresh the list. Try again in a moment.");
   };
 
-  /** Snooze from a card: move the follow-up, refresh, then put focus back on that lead's card. */
+  /**
+   * Snooze from a card. Focus goes back to the lead's card, or, when the filters now hide it, to
+   * its neighbour in the list, then the active reminder filter, then the page heading. A failed
+   * request leaves focus on the Snooze button.
+   */
   const snooze = async (lead: Lead, at: Date) => {
+    const order = [...document.querySelectorAll<HTMLElement>("[data-lead-id]")].map((el) => el.dataset.leadId);
+    let mutation: Mutation;
     try {
-      await api.setFollowUp(lead.id, at.toISOString());
+      mutation = await api.setFollowUp(lead.id, at.toISOString());
     } catch (error) {
       toast.error("Couldn't snooze the follow-up.", {
         description: error instanceof ApiError ? error.message : undefined,
       });
+      document.querySelector<HTMLElement>(`[data-snooze-for="${lead.id}"]`)?.focus();
       return;
     }
-    await afterChange(`Follow-up for ${lead.name} moved to ${formatWhen(at, new Date())}.`);
-    flashLeads([lead.id]);
-    // Wait for the refreshed list to render; the card may have moved sections.
+    if (mutation.entry === null) {
+      toast(`Follow-up for ${lead.name} is already scheduled for ${formatWhen(at, new Date())}.`);
+    } else {
+      await afterChange(`Follow-up for ${lead.name} moved to ${formatWhen(at, new Date())}.`);
+      flashLeads([lead.id]);
+    }
+    // Wait for the refreshed list to render; the card may have moved sections or been filtered out.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    document.querySelector<HTMLElement>(`[data-lead-id="${lead.id}"]`)?.focus();
+    const here = order.indexOf(String(lead.id));
+    const candidates = [String(lead.id), ...order.slice(here + 1), ...order.slice(0, Math.max(here, 0)).reverse()];
+    const target =
+      candidates.map((id) => document.querySelector<HTMLElement>(`[data-lead-id="${id}"]`)).find(Boolean) ??
+      document.querySelector<HTMLElement>('[data-reminder-filter][aria-pressed="true"]') ??
+      document.querySelector<HTMLElement>("main h1");
+    target?.focus();
   };
 
   const onCreated = async (lead: Lead) => {
@@ -288,7 +305,7 @@ export function LeadFlowApp() {
 
       <main className="mx-auto max-w-[1040px] px-4 pb-16 sm:px-6">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 pt-7 pb-3.5">
-          <h1 className="min-h-9 text-[23px] font-bold tracking-tight sm:text-[28px]">
+          <h1 tabIndex={-1} className="min-h-9 text-[23px] font-bold tracking-tight outline-none sm:text-[28px]">
             {now ? formatLongDate(now) : ""}
           </h1>
           {leads.all && (
@@ -296,7 +313,8 @@ export function LeadFlowApp() {
               Across all leads:
               <button
                 type="button"
-                aria-pressed={reminder === "today"}
+                data-reminder-filter
+            aria-pressed={reminder === "today"}
                 onClick={() => toggleReminder("today")}
                 className={cn(
                   "rounded-md px-1.5 py-0.5 underline-offset-3 hover:underline",
@@ -308,7 +326,8 @@ export function LeadFlowApp() {
               and
               <button
                 type="button"
-                aria-pressed={reminder === "overdue"}
+                data-reminder-filter
+            aria-pressed={reminder === "overdue"}
                 onClick={() => toggleReminder("overdue")}
                 className={cn(
                   "rounded-md px-1.5 py-0.5 text-overdue underline-offset-3 hover:underline",
@@ -333,6 +352,7 @@ export function LeadFlowApp() {
           </div>
           <button
             type="button"
+            data-reminder-filter
             aria-pressed={reminder === "attention"}
             onClick={() => toggleReminder("attention")}
             className={cn(

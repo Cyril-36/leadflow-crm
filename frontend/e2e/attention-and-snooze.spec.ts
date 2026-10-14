@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { API, activeElementInfo, card, createLead } from "./helpers";
 
@@ -74,4 +74,119 @@ test("Snooze works from the keyboard", async ({ page, request }) => {
   await page.keyboard.press("Enter");
   await expect(page.getByText(new RegExp(`^Follow-up for ${lead.name} moved to`))).toBeVisible();
   await expect(menu).toHaveCount(0);
+});
+
+/** A unique lead due `minutes` from now, today, or null too close to midnight. */
+async function leadDueSoon(page: Page, request: APIRequestContext, prefix: string, minutes: number) {
+  const at = await page.evaluate((m) => {
+    const soon = new Date(Date.now() + m * 60_000);
+    return soon.getDate() === new Date().getDate() ? soon.toISOString() : null;
+  }, minutes);
+  if (!at) return null;
+  const lead = await createLead(request, prefix);
+  await request.post(`${API}/leads/${lead.id}/discussions`, { data: { note: "Due soon.", follow_up_at: at } });
+  return { ...lead, at };
+}
+
+async function snoozeWithKeyboard(page: Page, name: string, option: string | RegExp) {
+  await page.getByRole("button", { name: `Snooze the follow-up for ${name}` }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("menuitem", { name: option }).focus();
+  await page.keyboard.press("Enter");
+}
+
+test("when a filter hides the snoozed lead, focus moves to the next card", async ({ page, request }) => {
+  await page.goto("/");
+  const tag = `Neighbour ${Date.now().toString(36)}`;
+  const first = await leadDueSoon(page, request, tag, 10);
+  const second = await leadDueSoon(page, request, tag, 20);
+  test.skip(!first || !second, "needs at least 20 minutes left in the local day");
+  await page.reload();
+  await page.getByRole("searchbox").fill(tag);
+  await page.getByRole("button", { name: /due today/ }).click();
+  await expect(page.locator("[data-lead-id]")).toHaveCount(2);
+
+  await snoozeWithKeyboard(page, first!.name, "Tomorrow, 10 AM");
+  await expect(page.getByText(`Follow-up for ${first!.name} moved to Tomorrow, 10:00 AM.`)).toBeVisible();
+  await expect(card(page, first!.id)).toHaveCount(0); // Due today no longer matches
+  await expect.poll(async () => (await activeElementInfo(page)).leadId).toBe(String(second!.id));
+});
+
+test("when the snoozed lead was the only one shown, focus moves to the active filter", async ({ page, request }) => {
+  await page.goto("/");
+  const lead = await leadDueSoon(page, request, `Only ${Date.now().toString(36)}`, 10);
+  test.skip(!lead, "needs at least 10 minutes left in the local day");
+  await page.reload();
+  await page.getByRole("searchbox").fill(lead!.name);
+  const dueToday = page.getByRole("button", { name: /due today/ });
+  await dueToday.click();
+  await expect(page.locator("[data-lead-id]")).toHaveCount(1);
+
+  await snoozeWithKeyboard(page, lead!.name, "Tomorrow, 10 AM");
+  await expect(page.locator("[data-lead-id]")).toHaveCount(0);
+  await expect(dueToday).toBeFocused();
+  await expect(dueToday).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a failed Snooze keeps the follow-up and leaves focus on the Snooze button", async ({ page, request }) => {
+  await page.goto("/");
+  const lead = await leadDueSoon(page, request, "Failing snooze", 10);
+  test.skip(!lead, "needs at least 10 minutes left in the local day");
+  await page.route(`**/api/leads/${lead!.id}/follow-up`, (route) =>
+    route.fulfill({ status: 500, json: { error: { code: "internal", message: "Server unavailable." } } }),
+  );
+  await page.reload();
+
+  await snoozeWithKeyboard(page, lead!.name, "Tomorrow, 10 AM");
+  await expect(page.getByText("Couldn't snooze the follow-up.")).toBeVisible();
+  await expect(page.getByRole("button", { name: `Snooze the follow-up for ${lead!.name}` })).toBeFocused();
+  await expect(agenda(page).locator(`[data-lead-id="${lead!.id}"]`)).toHaveCount(1);
+  await expect(page.getByText(/moved to/)).toHaveCount(0);
+});
+
+test("Snoozing to the time already set says so instead of claiming a move", async ({ page, request }) => {
+  await page.goto("/");
+  const lead = await leadDueSoon(page, request, "Unchanged snooze", 10);
+  test.skip(!lead, "needs at least 10 minutes left in the local day");
+  // Send the lead's current follow-up time, so the real API treats it as a no-op (entry: null).
+  await page.route(`**/api/leads/${lead!.id}/follow-up`, (route) =>
+    route.continue({ postData: JSON.stringify({ follow_up_at: lead!.at }) }),
+  );
+  await page.reload();
+
+  await snoozeWithKeyboard(page, lead!.name, "Tomorrow, 10 AM");
+  await expect(page.getByText(new RegExp(`^Follow-up for ${lead!.name} is already scheduled for`))).toBeVisible();
+  await expect(page.getByText(/moved to/)).toHaveCount(0);
+  await expect.poll(async () => (await activeElementInfo(page)).leadId).toBe(String(lead!.id));
+
+  await card(page, lead!.id).click();
+  const items = page.getByRole("dialog").getByRole("list", { name: "Discussion history, newest first" }).getByRole("listitem");
+  await expect(items.first()).toContainText("Due soon."); // the newest entry is still the note
+  await expect(items.filter({ hasText: "Follow-up moved" })).toHaveCount(0); // nothing logged
+});
+
+test("the Snooze option matching the current follow-up is disabled", async ({ page, request }) => {
+  await page.goto("/");
+  // The "Later today" option: two hours ahead, rounded up to the quarter hour (lib/time.ts).
+  const laterToday = () =>
+    page.evaluate(() => {
+      const later = new Date(Date.now() + 2 * 3_600_000);
+      later.setSeconds(0, 0);
+      later.setMinutes(Math.ceil(later.getMinutes() / 15) * 15);
+      return later.getDate() === new Date().getDate() ? later.toISOString() : null;
+    });
+  let at = await laterToday();
+  if (at && (await page.evaluate(() => new Date(Date.now() + 2 * 3_600_000 + 60_000).getMinutes() % 15 === 0))) {
+    await page.waitForTimeout(61_000); // the option is about to change; wait for the next quarter
+    at = await laterToday();
+  }
+  test.skip(!at, "needs a 'Later today' option");
+  const lead = await createLead(request, "Already set snooze");
+  await request.post(`${API}/leads/${lead.id}/discussions`, { data: { note: "Later.", follow_up_at: at } });
+  await page.reload();
+
+  await page.getByRole("button", { name: `Snooze the follow-up for ${lead.name}` }).click();
+  await expect(page.getByRole("menuitem", { name: /^Later today/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("menuitem", { name: /^Later today/ })).toContainText("Already set");
+  await expect(page.getByRole("menuitem", { name: "Tomorrow, 10 AM" })).not.toHaveAttribute("aria-disabled", "true");
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlarmClock, ChevronDown } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,9 +23,7 @@ interface SnoozeMenuProps {
 /** One-click "move this follow-up" from a card: later today, tomorrow, next working day. */
 export function SnoozeMenu({ lead, now, onSnooze }: SnoozeMenuProps) {
   const [busy, setBusy] = useState(false);
-  // After a choice the card usually moves (e.g. out of Today), so the app focuses its new card;
-  // only Escape returns focus to this trigger.
-  const chose = useRef(false);
+  const current = lead.next_follow_up_at ? new Date(lead.next_follow_up_at).getTime() : null;
 
   return (
     <DropdownMenu>
@@ -34,6 +32,7 @@ export function SnoozeMenu({ lead, now, onSnooze }: SnoozeMenuProps) {
           variant="outline"
           size="sm"
           aria-label={`Snooze the follow-up for ${lead.name}`}
+          data-snooze-for={lead.id}
           aria-disabled={busy}
           className="absolute right-4 bottom-3.5 h-8 gap-1 bg-card px-2.5 text-[13px] font-semibold aria-disabled:opacity-60"
         >
@@ -42,30 +41,28 @@ export function SnoozeMenu({ lead, now, onSnooze }: SnoozeMenuProps) {
           <ChevronDown aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="min-w-56"
-        onCloseAutoFocus={(event) => {
-          if (chose.current) event.preventDefault();
-          chose.current = false;
-        }}
-      >
+      {/* Radix returns focus to this trigger on close; after the request the app moves it on. */}
+      <DropdownMenuContent align="end" className="min-w-56">
         <DropdownMenuLabel>Move the follow-up to</DropdownMenuLabel>
-        {followUpShortcuts(now).map((option) => (
-          <DropdownMenuItem
-            key={option.label}
-            className="text-[14px]"
-            onSelect={async () => {
-              if (busy) return;
-              chose.current = true;
-              setBusy(true);
-              await onSnooze(lead, option.at);
-              setBusy(false);
-            }}
-          >
-            {option.label}
-          </DropdownMenuItem>
-        ))}
+        {followUpShortcuts(now).map((option) => {
+          const alreadySet = option.at.getTime() === current;
+          return (
+            <DropdownMenuItem
+              key={option.label}
+              className="text-[14px]"
+              disabled={alreadySet}
+              onSelect={async () => {
+                if (busy) return;
+                setBusy(true);
+                await onSnooze(lead, option.at);
+                setBusy(false);
+              }}
+            >
+              {option.label}
+              {alreadySet && <span className="ml-auto text-xs text-muted-foreground">Already set</span>}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
