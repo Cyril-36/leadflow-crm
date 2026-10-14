@@ -157,6 +157,35 @@ test("LeadFlow walkthrough", async ({ page }) => {
   await clickOn(page, page.getByRole("radio", { name: /^Won/ }));
   await pause(page, 1600);
   await clickOn(page, page.getByRole("radio", { name: /^All/ }));
-  await caption(page, "Built with Next.js, shadcn/ui and FastAPI · github.com/Cyril-36/leadflow-crm");
-  await pause(page, 3000);
+  await pause(page, 900);
+
+  // Extras beyond the brief.
+  await caption(page, "Extra: the overdue count is a filter too");
+  const overdueToggle = page.getByRole("button", { name: /overdue$/ });
+  await clickOn(page, overdueToggle);
+  await pause(page, 2200);
+  await clickOn(page, overdueToggle);
+  await pause(page, 700);
+
+  await caption(page, "Extra: reschedule a follow-up without writing a note");
+  await clickOn(page, page.locator("[data-lead-id]", { hasText: "Arjun Kapoor" }));
+  await clickOn(page, dialog.getByRole("button", { name: "Change follow-up" }));
+  await clickOn(page, dialog.getByRole("button", { name: "Tomorrow, 10 AM" }));
+  await pause(page, 900);
+  await clickOn(page, dialog.getByRole("button", { name: "Save follow-up" }));
+  await expect(dialog.getByText(/^Follow-up moved to Tomorrow/)).toBeVisible();
+  await pause(page, 1800);
+
+  await caption(page, "Extra: correct a lead's details from the dialog");
+  await clickOn(page, dialog.getByRole("button", { name: "Edit details" }));
+  const phone = dialog.getByLabel("Phone (optional)");
+  await phone.fill("");
+  await phone.pressSequentially("555-0161", { delay: 45 });
+  await clickOn(page, dialog.getByRole("button", { name: "Save details" }));
+  await expect(dialog.getByText("Updated phone")).toBeVisible();
+  await pause(page, 1800);
+  await clickOn(page, dialog.getByRole("button", { name: "Close" }));
+
+  await caption(page, "Also: Docker Compose, keyboard shortcuts and drafts that survive a refresh. github.com/Cyril-36/leadflow-crm");
+  await pause(page, 3200);
 });

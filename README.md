@@ -42,6 +42,7 @@ follow-ups in red, a seed script with 8 fictional leads and their discussions, a
 - **Edit details.** Correct a lead's name, company or phone from the dialog; the change is logged.
 - **Drafts survive a refresh.** An unsaved note comes back after an accidental reload, with a
   *Discard draft* option.
+- **Keyboard shortcuts.** `/` jumps to search, `N` adds a lead, Ctrl/⌘ + Enter saves a note.
 - Full keyboard support (focus stays inside dialogs and returns to the card you opened), a
   full-screen dialog with a pinned Save button on phones, reduced-motion support, and a prompt
   before discarding an unsaved note.
@@ -102,7 +103,7 @@ of [`.env.example`](.env.example) to `backend/.env` and/or `frontend/.env.local`
 |---|---|---|
 | Backend (pytest, 110 tests) | `cd backend && uv run pytest` | Validation, status codes and error format, pinned/overdue rules with a frozen clock, DST days in New York and Santiago, legacy time zone names, timeline order, search and filters, editing and rescheduling, 90 simultaneous follow-up changes, persistence across restarts, CORS, the seed |
 | Frontend unit (27 tests) | `cd frontend && npm test` | Time helpers (calendar-relative wording, DST gaps and repeats), list request handling (results tied to their filter, overlapping refreshes) and reconciling out-of-order responses |
-| Browser (Playwright, 21 tests) | `cd frontend && npx playwright install chromium && npm run test:e2e` | The full workflow end to end; editing, rescheduling, reminder filters, draft recovery; failed saves, failed and overlapping refreshes, a status change racing a pending save, text typed during a save; long names at 375 px and desktop; the phone layout with the keyboard open; keyboard focus |
+| Browser (Playwright, 22 tests) | `cd frontend && npx playwright install chromium && npm run test:e2e` | The full workflow end to end; editing, rescheduling, reminder filters, draft recovery, keyboard shortcuts; failed saves, failed and overlapping refreshes, a status change racing a pending save, text typed during a save; long names at 375 px and desktop; the phone layout with the keyboard open; keyboard focus |
 | Lint and types | `cd backend && uv run ruff check .` · `cd frontend && npm run lint && npm run typecheck` | |
 
 The browser tests never touch your local app or its data: they start their own API on port 8100
