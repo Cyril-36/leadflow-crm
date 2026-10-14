@@ -149,9 +149,15 @@ export function LeadFlowApp() {
   const onCreated = async (lead: Lead) => {
     const q = query.trim().toLowerCase();
     const hiddenByStatus = status !== "all" && status !== lead.status;
+    // A new lead has no follow-up yet, so the Due today and Overdue filters always hide it.
+    const hiddenByReminder = reminder !== "any";
     const hiddenBySearch = q !== "" && !`${lead.name} ${lead.company ?? ""}`.toLowerCase().includes(q);
-    if (hiddenByStatus || hiddenBySearch) {
-      const reason = hiddenByStatus ? `the ${statusLabel(status as Lead["status"])} filter` : "your search";
+    if (hiddenByStatus || hiddenByReminder || hiddenBySearch) {
+      const reason = hiddenByStatus
+        ? `the ${statusLabel(status as Lead["status"])} filter`
+        : hiddenByReminder
+          ? `the ${reminder === "today" ? "Due today" : "Overdue"} filter`
+          : "your search";
       await afterChange(`Lead added. It's hidden by ${reason}.`, { view: () => openLead(lead.id), showAll: true });
     } else {
       await afterChange("Lead added.");

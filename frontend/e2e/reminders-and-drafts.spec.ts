@@ -32,6 +32,29 @@ test("the due-today and overdue counts filter the list and combine with status",
   await expect(card(page, plain.id)).toBeVisible();
 });
 
+test("a lead created while a reminder filter is on offers View lead and Show all", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /overdue$/ }).click();
+  const name = `Hidden by reminder ${Date.now().toString(36)}`;
+  await page.getByRole("button", { name: "Add lead" }).click();
+  await page.getByLabel("Name").fill(name);
+  await page.getByRole("button", { name: "Save lead" }).click();
+
+  await expect(page.getByText("Lead added. It's hidden by the Overdue filter.")).toBeVisible();
+  await page.getByRole("button", { name: "View lead" }).click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-lead-id]", { hasText: name })).toHaveCount(0); // still filtered
+
+  await page.getByRole("button", { name: "Add lead" }).click();
+  const second = `${name} two`;
+  await page.getByLabel("Name").fill(second);
+  await page.getByRole("button", { name: "Save lead" }).click();
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.getByRole("button", { name: /overdue$/ })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("[data-lead-id]", { hasText: second })).toBeVisible();
+});
+
 test("an unsaved note survives a page refresh and can be discarded", async ({ page, request }) => {
   const lead = await createLead(request, "Draft restore lead");
   await setStatus(request, lead.id, "contacted");
