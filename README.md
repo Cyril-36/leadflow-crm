@@ -11,12 +11,17 @@ Hosted on Render's free tier, so after 15 idle minutes it sleeps: the first visi
 minute to wake both services. Each wake-up starts from fresh demo data (8 fictional leads, times
 relative to that moment in India time), so feel free to add leads and notes.
 
-**Demo video:** [docs/demo.mp4](docs/demo.mp4) walks through the evaluation checklist in order.
+**Demo video:** [docs/demo.mp4](docs/demo.mp4) (1 min 27 s, 2560×1600, real speed with no cuts)
+walks through the evaluation checklist in order, then the extras.
 
 | Desktop | Phone (375 px) |
 |---|---|
 | ![Lead list with today's follow-ups](docs/screenshots/desktop-list.png) | ![Lead list on a phone](docs/screenshots/mobile-list.png) |
 | ![Timeline dialog with a follow-up being set](docs/screenshots/desktop-timeline-dialog.png) | ![Timeline dialog on a phone](docs/screenshots/mobile-timeline-dialog.png) |
+
+| Needs attention | Snooze |
+|---|---|
+| ![Needs attention: open leads that need action, each with the reason](docs/screenshots/desktop-needs-attention.png) | ![Snooze menu on a due follow-up](docs/screenshots/desktop-snooze.png) |
 
 ## What it does
 
@@ -114,14 +119,15 @@ of [`.env.example`](.env.example) to `backend/.env` and/or `frontend/.env.local`
 | Suite | Command | What it covers |
 |---|---|---|
 | Backend (pytest, 121 tests) | `cd backend && uv run pytest` | Validation (including phone formats and time zone directory names), status codes and error format, pinned/overdue rules with a frozen clock, DST days in New York and Santiago, legacy time zone names, timeline order, search and filters, editing and rescheduling, 90 simultaneous follow-up changes, persistence across restarts, CORS, the seed |
-| Frontend unit (50 tests) | `cd frontend && npm test` | Time helpers (calendar-relative wording, DST gaps and repeats, weekend-aware shortcuts), list request handling (results tied to their filter, overlapping refreshes), reconciling out-of-order responses, the Needs attention rules, Snooze choices, search matching for new leads, and CSV quoting and formula safety (+91-style phone numbers left intact) |
+| Frontend unit (52 tests) | `cd frontend && npm test` | Time helpers (calendar-relative wording, DST gaps and repeats, weekend-aware shortcuts), list request handling (results tied to their filter, overlapping refreshes), reconciling out-of-order responses, the Needs attention rules, Snooze choices, search matching for new leads, and CSV quoting and formula safety (+91-style phone numbers left intact) |
 | Browser (Playwright, 37 tests) | `cd frontend && npx playwright install chromium && npm run test:e2e` | The full workflow end to end; editing, rescheduling, reminder filters, Needs attention, Snooze (pointer, keyboard, focus when filtered out, failure, no-op, never earlier, completing while the lead is open), CSV export, a new lead hidden by search, draft recovery, keyboard shortcuts; failed saves, failed and overlapping refreshes, a status change racing a pending save, a slow details save, the details editor on a short phone screen, text typed during a save; long names at 375 px and desktop; the phone layout with the keyboard open; keyboard focus |
 | Lint and types | `cd backend && uv run ruff check .` · `cd frontend && npm run lint && npm run typecheck` | |
 
 The browser tests never touch your local app or its data: they start their own API on port 8100
 (with a throwaway `backend/e2e.db`) and their own production build on port 3100. The demo video
 and screenshots are produced the same way by `npm run demo:record` (ports 8200/3200,
-`backend/demo.db`; `DEMO_TZ` picks the time zone).
+`backend/demo.db`; `DEMO_TZ` picks the time zone, e.g. `DEMO_TZ=Asia/Kolkata`). It needs `ffmpeg`
+and opens a visible Chrome window, the only mode that captures at full 2x resolution.
 
 [GitHub Actions](.github/workflows/ci.yml) runs all of the above on every push, plus a Docker
 Compose build that waits for both services to report healthy.
