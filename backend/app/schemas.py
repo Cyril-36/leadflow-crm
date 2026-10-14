@@ -5,7 +5,11 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 from app.models import EntryKind, LeadStatus
 
-PHONE_RE = re.compile(r"^[0-9+().\s-]{3,30}$")
+# Digits, spaces and + ( ) - . with at least one digit; no tabs or line breaks.
+PHONE_RE = re.compile(r"^(?=[^0-9]*[0-9])[0-9+(). -]{3,30}$")
+PHONE_MESSAGE = (
+    "Phone can contain only digits, spaces and + ( ) - . (3-30 chars, at least one digit)."
+)
 
 
 class _Input(BaseModel):
@@ -35,7 +39,7 @@ class LeadCreate(_Input):
     @classmethod
     def _phone_format(cls, value: str | None) -> str | None:
         if value is not None and not PHONE_RE.fullmatch(value):
-            raise ValueError("Phone can contain only digits, spaces and + ( ) - . (3-30 chars).")
+            raise ValueError(PHONE_MESSAGE)
         return value
 
 
@@ -69,7 +73,7 @@ class LeadDetailsUpdate(_Input):
     @classmethod
     def _phone_format(cls, value: str | None) -> str | None:
         if value is not None and not PHONE_RE.fullmatch(value):
-            raise ValueError("Phone can contain only digits, spaces and + ( ) - . (3-30 chars).")
+            raise ValueError(PHONE_MESSAGE)
         return value
 
     @model_validator(mode="after")

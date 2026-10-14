@@ -27,7 +27,8 @@ from app.schemas import (
 def resolve_zone(tz: str) -> ZoneInfo:
     try:
         return ZoneInfo(tz)
-    except (ZoneInfoNotFoundError, ValueError):
+    # OSError: a tzdata directory such as "America" or "Etc" raises IsADirectoryError.
+    except (ZoneInfoNotFoundError, ValueError, OSError):
         raise AppError(
             422,
             "invalid_timezone",
