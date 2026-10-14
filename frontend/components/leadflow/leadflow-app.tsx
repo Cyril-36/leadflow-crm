@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Toaster } from "@/components/ui/sonner";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useDrafts } from "@/hooks/use-drafts";
 import { useLeads, type StatusFilter } from "@/hooks/use-leads";
 import { useNow } from "@/hooks/use-now";
 import type { Lead, LeadList } from "@/lib/api";
@@ -21,6 +22,19 @@ import { Agenda } from "./agenda";
 import { LeadCard } from "./lead-card";
 import { LeadDialog, type DialogSession } from "./lead-dialog";
 import { FirstUse, LoadError, LoadingList, NoResults, StaleBar } from "./list-states";
+
+type ReminderFilter = "any" | "today" | "overdue";
+
+const isOverdue = (lead: Lead, now: Date) => Boolean(lead.next_follow_up_at && new Date(lead.next_follow_up_at) < now);
+
+/** Narrow the server's (status- and search-filtered) list to today's or overdue follow-ups. */
+function byReminder(view: LeadList, reminder: ReminderFilter, now: Date): LeadList {
+  if (reminder === "today") return { pinned: view.pinned, leads: [] };
+  if (reminder === "overdue") {
+    return { pinned: view.pinned.filter((l) => isOverdue(l, now)), leads: view.leads.filter((l) => isOverdue(l, now)) };
+  }
+  return view;
+}
 
 function counts(all: LeadList | null, now: Date | null) {
   const leads = all ? [...all.pinned, ...all.leads] : [];
@@ -51,6 +65,7 @@ export function LeadFlowApp() {
   const now = useNow();
   const [timeZone] = useState(() => (typeof window === "undefined" ? null : browserTimeZone()));
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [reminder, setReminder] = useState<ReminderFilter>("any");
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search, 250);
   const leads = useLeads(status, query, timeZone);
@@ -58,7 +73,7 @@ export function LeadFlowApp() {
   const [dialog, setDialog] = useState<DialogSession | null>(null);
   const [lastDialog, setLastDialog] = useState<DialogSession | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const drafts = useDrafts();
   // Leads changed while their dialog was open get a short highlight once it closes.
   const [flash, setFlash] = useState<Record<number, number>>({});
   const changedWhileOpen = useRef(new Set<number>());
@@ -83,6 +98,7 @@ export function LeadFlowApp() {
 
   const clearFilters = () => {
     setStatus("all");
+    setReminder("any");
     setSearch("");
   };
 
@@ -123,8 +139,13 @@ export function LeadFlowApp() {
   };
 
   const c = counts(leads.all, now);
-  const view = leads.view;
-  const filtered = status !== "all" || query.trim() !== "";
+  const view = leads.view && now ? byReminder(leads.view, reminder, now) : leads.view;
+  const filtered = status !== "all" || query.trim() !== "" || reminder !== "any";
+  const leadsNoun = status === "all" ? "leads" : `${statusLabel(status)} leads`;
+  const emptyDescription =
+    (reminder === "today" ? `No ${leadsNoun} due today` : reminder === "overdue" ? `No overdue ${leadsNoun}` : `No ${leadsNoun}`) +
+    (query.trim() ? ` match \u201c${query.trim()}\u201d` : "");
+  const toggleReminder = (value: ReminderFilter) => setReminder((current) => (current === value ? "any" : value));
   const nothingToShow = view !== null && view.pinned.length === 0 && view.leads.length === 0;
   const filterOptions = [
     { value: "all" as StatusFilter, label: "All", count: c.total },
@@ -163,23 +184,54 @@ export function LeadFlowApp() {
             {now ? formatLongDate(now) : ""}
           </h1>
           {leads.all && (
-            <p className="text-muted-foreground">
-              Across all leads: <Count value={c.dueToday} className="text-foreground" /> due today,{" "}
-              <span className="text-overdue">
+            <p className="flex flex-wrap items-baseline gap-x-1 text-muted-foreground">
+              Across all leads:
+              <button
+                type="button"
+                aria-pressed={reminder === "today"}
+                onClick={() => toggleReminder("today")}
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 underline-offset-3 hover:underline",
+                  reminder === "today" && "bg-accent text-accent-foreground ring-1 ring-primary/30",
+                )}
+              >
+                <Count value={c.dueToday} className="text-foreground" /> due today
+              </button>
+              and
+              <button
+                type="button"
+                aria-pressed={reminder === "overdue"}
+                onClick={() => toggleReminder("overdue")}
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-overdue underline-offset-3 hover:underline",
+                  reminder === "overdue" && "bg-overdue-tint ring-1 ring-overdue/30",
+                )}
+              >
                 <Count value={c.overdue} /> overdue
-              </span>
+              </button>
             </p>
           )}
         </div>
 
-        <div className="lf-filters mb-6 min-w-0">
-          <SegmentedControl<StatusFilter>
-            aria-label="Filter leads by status"
-            options={filterOptions}
-            value={status}
-            onChange={setStatus}
-            size="lg"
-          />
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="lf-filters min-w-0 max-w-full">
+            <SegmentedControl<StatusFilter>
+              aria-label="Filter leads by status"
+              options={filterOptions}
+              value={status}
+              onChange={setStatus}
+              size="lg"
+            />
+          </div>
+          {filtered && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-sm font-semibold text-primary underline underline-offset-3 hover:text-primary-hover"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {leads.stale && <StaleBar onRefresh={() => void retryRefresh()} />}
@@ -191,14 +243,7 @@ export function LeadFlowApp() {
         ) : nothingToShow && !filtered ? (
           <FirstUse onAdd={() => setAddOpen(true)} />
         ) : nothingToShow ? (
-          <NoResults
-            description={
-              query.trim()
-                ? `No ${status === "all" ? "" : `${statusLabel(status)} `}leads match “${query.trim()}”`
-                : `No ${statusLabel(status as Lead["status"])} leads`
-            }
-            onClear={clearFilters}
-          />
+          <NoResults description={emptyDescription} onClear={clearFilters} />
         ) : (
           view && (
             <>
@@ -206,7 +251,13 @@ export function LeadFlowApp() {
               {view.leads.length > 0 && (
                 <section aria-labelledby="other-heading">
                   <h2 id="other-heading" className="mb-2.5 text-[15px] font-semibold">
-                    {view.pinned.length > 0 ? "Other leads" : status === "all" ? "All leads" : `${statusLabel(status)} leads`}
+                    {reminder === "overdue"
+                      ? "Overdue from earlier days"
+                      : view.pinned.length > 0
+                        ? "Other leads"
+                        : status === "all"
+                          ? "All leads"
+                          : `${statusLabel(status)} leads`}
                   </h2>
                   <ul className="flex flex-col gap-2">
                     {view.leads.map((lead) => (
@@ -227,11 +278,10 @@ export function LeadFlowApp() {
         session={lastDialog}
         now={now}
         timeZone={timeZone ?? "UTC"}
-        drafts={drafts}
-        onDraftChange={(leadId, value) => setDrafts((prev) => ({ ...prev, [leadId]: value }))}
-        onDraftSaved={(leadId, submitted) =>
-          setDrafts((prev) => (prev[leadId] === submitted ? { ...prev, [leadId]: "" } : prev))
-        }
+        drafts={drafts.drafts}
+        restoredDrafts={drafts.restored}
+        onDraftChange={drafts.change}
+        onDraftSaved={drafts.saved}
         onClose={closeLead}
         listStale={leads.stale}
         onRefreshList={retryRefresh}

@@ -14,6 +14,8 @@ interface ComposerProps {
   now: Date;
   timeZone: string;
   draft: string;
+  /** The draft came back from an earlier visit (e.g. after a refresh) and hasn't been edited. */
+  draftRestored: boolean;
   onDraftChange: (value: string) => void;
   /**
    * Resolves null when the note was saved, or a message explaining why it wasn't. `submittedDraft`
@@ -37,6 +39,7 @@ export function Composer({
   now,
   timeZone,
   draft,
+  draftRestored,
   onDraftChange,
   onSave,
   onMarkDone,
@@ -89,6 +92,14 @@ export function Composer({
       <Label htmlFor="note-box" className="text-[13px] font-semibold text-muted-foreground">
         New discussion
       </Label>
+      {draftRestored && (
+        <p role="status" className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+          Draft restored from your last visit.
+          <button type="button" className={linkButton} onClick={() => onDraftChange("")}>
+            Discard draft
+          </button>
+        </p>
+      )}
       <Textarea
         id="note-box"
         ref={textareaRef}

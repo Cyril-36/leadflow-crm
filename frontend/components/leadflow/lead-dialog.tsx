@@ -41,6 +41,8 @@ interface LeadDialogProps {
   now: Date | null;
   timeZone: string;
   drafts: Record<number, string>;
+  /** Leads whose draft was brought back from an earlier visit and not yet edited. */
+  restoredDrafts: ReadonlySet<number>;
   onDraftChange: (leadId: number, value: string) => void;
   /** A note was saved from this exact draft text; clear the draft only if it hasn't changed since. */
   onDraftSaved: (leadId: number, submitted: string) => void;
@@ -61,6 +63,7 @@ export function LeadDialog({
   now,
   timeZone,
   drafts,
+  restoredDrafts,
   onDraftChange,
   onDraftSaved,
   onClose,
@@ -117,6 +120,7 @@ export function LeadDialog({
               now={now}
               timeZone={timeZone}
               draft={draft}
+              draftRestored={restoredDrafts.has(session.leadId) && draft.trim() !== ""}
               onDraftChange={(value) => onDraftChange(session.leadId, value)}
               onDraftSaved={(submitted) => onDraftSaved(session.leadId, submitted)}
               onChanged={(message) => onChanged(session.leadId, message)}
@@ -164,6 +168,7 @@ interface BodyProps {
   now: Date;
   timeZone: string;
   draft: string;
+  draftRestored: boolean;
   onDraftChange: (value: string) => void;
   onDraftSaved: (submitted: string) => void;
   onChanged: (message: string) => Promise<void>;
@@ -183,6 +188,7 @@ function LeadDialogBody({
   now,
   timeZone,
   draft,
+  draftRestored,
   onDraftChange,
   onDraftSaved,
   onChanged,
@@ -428,6 +434,7 @@ function LeadDialogBody({
             now={now}
             timeZone={timeZone}
             draft={draft}
+            draftRestored={draftRestored}
             onDraftChange={onDraftChange}
             onSave={(note, followUpAt, submittedDraft) => saveNote(lead, note, followUpAt, submittedDraft)}
             onMarkDone={() => markDone(lead)}
