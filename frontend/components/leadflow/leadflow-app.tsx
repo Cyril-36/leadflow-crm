@@ -230,6 +230,8 @@ export function LeadFlowApp() {
         drafts={drafts}
         onDraftChange={(leadId, value) => setDrafts((prev) => ({ ...prev, [leadId]: value }))}
         onClose={closeLead}
+        listStale={leads.stale}
+        onRefreshList={retryRefresh}
         onChanged={(leadId, message) => {
           changedWhileOpen.current.add(leadId);
           return afterChange(message);

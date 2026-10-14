@@ -42,12 +42,26 @@ interface LeadDialogProps {
   onClose: () => void;
   /** Called after any successful change; refreshes the list and reports the outcome. */
   onChanged: (leadId: number, message: string) => Promise<void>;
+  /** The list behind the dialog failed to refresh; offer a retry that keyboard users can reach. */
+  listStale: boolean;
+  onRefreshList: () => Promise<void>;
 }
 
 const mutationError = (error: unknown) =>
   error instanceof ApiError ? error.message : "Something went wrong. Please try again.";
 
-export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange, onClose, onChanged }: LeadDialogProps) {
+export function LeadDialog({
+  open,
+  session,
+  now,
+  timeZone,
+  drafts,
+  onDraftChange,
+  onClose,
+  onChanged,
+  listStale,
+  onRefreshList,
+}: LeadDialogProps) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -99,6 +113,8 @@ export function LeadDialog({ open, session, now, timeZone, drafts, onDraftChange
               draft={draft}
               onDraftChange={(value) => onDraftChange(session.leadId, value)}
               onChanged={(message) => onChanged(session.leadId, message)}
+              listStale={listStale}
+              onRefreshList={onRefreshList}
               textareaRef={textareaRef}
               closeRef={closeRef}
             />
@@ -143,6 +159,8 @@ interface BodyProps {
   draft: string;
   onDraftChange: (value: string) => void;
   onChanged: (message: string) => Promise<void>;
+  listStale: boolean;
+  onRefreshList: () => Promise<void>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   closeRef: React.RefObject<HTMLButtonElement | null>;
 }
@@ -152,10 +170,22 @@ type Detail =
   | { phase: "error"; message: string }
   | { phase: "ready"; lead: Lead; entries: Entry[] };
 
-function LeadDialogBody({ leadId, now, timeZone, draft, onDraftChange, onChanged, textareaRef, closeRef }: BodyProps) {
+function LeadDialogBody({
+  leadId,
+  now,
+  timeZone,
+  draft,
+  onDraftChange,
+  onChanged,
+  listStale,
+  onRefreshList,
+  textareaRef,
+  closeRef,
+}: BodyProps) {
   const [detail, setDetail] = useState<Detail>({ phase: "loading" });
   const [pendingStatus, setPendingStatus] = useState<LeadStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -274,7 +304,6 @@ function LeadDialogBody({ leadId, now, timeZone, draft, onDraftChange, onChanged
             <Select
               value={pendingStatus ?? lead.status}
               onValueChange={(value) => void changeStatus(lead, value as LeadStatus)}
-              disabled={pendingStatus !== null}
             >
               <SelectTrigger aria-labelledby="status-label" className="h-10 min-w-44 bg-card text-[15px] max-sm:w-full">
                 {pendingStatus && <Loader2 className="animate-spin" aria-hidden="true" />}
@@ -297,8 +326,27 @@ function LeadDialogBody({ leadId, now, timeZone, draft, onDraftChange, onChanged
         </DialogClose>
       </div>
 
+      {listStale && (
+        <div role="status" className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 bg-stale px-4 py-2 text-sm text-stale-foreground sm:px-6">
+          Your changes are saved, but the lead list behind this window may be out of date.
+          <button
+            type="button"
+            aria-disabled={refreshing}
+            onClick={async () => {
+              if (refreshing) return;
+              setRefreshing(true);
+              await onRefreshList();
+              setRefreshing(false);
+            }}
+            className="font-semibold underline underline-offset-3 aria-disabled:opacity-60"
+          >
+            {refreshing ? "Refreshing…" : "Refresh list"}
+          </button>
+        </div>
+      )}
+
       {detail.phase === "ready" && lead ? (
-        <div className="flex min-h-0 flex-1 flex-col max-sm:overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col max-sm:scroll-pb-24 max-sm:overflow-y-auto">
           <div className="min-h-[120px] flex-1 overflow-y-auto px-4 pt-5 pb-1 sm:px-6 max-sm:flex-none max-sm:overflow-visible">
             <Timeline entries={detail.entries} now={now} />
           </div>

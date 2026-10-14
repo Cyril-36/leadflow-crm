@@ -22,7 +22,10 @@ interface ComposerProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }
 
-const linkButton = "font-semibold whitespace-nowrap text-primary underline underline-offset-3 hover:text-primary-hover disabled:opacity-60";
+// Busy controls use aria-disabled rather than disabled: a disabled button drops keyboard focus,
+// which would strand focus on the dialog container. Handlers ignore presses while busy.
+const linkButton =
+  "font-semibold whitespace-nowrap text-primary underline underline-offset-3 hover:text-primary-hover aria-disabled:cursor-progress aria-disabled:opacity-60";
 
 export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, onMarkDone, busy, textareaRef }: ComposerProps) {
   const [editingFollowUp, setEditingFollowUp] = useState(false);
@@ -90,7 +93,14 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
             {current ? "Change follow-up" : "Add follow-up"}
           </button>
           {current && (
-            <button type="button" className={linkButton} onClick={() => void onMarkDone()} disabled={busy || saving}>
+            <button
+              type="button"
+              className={linkButton}
+              aria-disabled={busy || saving}
+              onClick={() => {
+                if (!busy && !saving) void onMarkDone();
+              }}
+            >
               Mark done
             </button>
           )}
@@ -155,7 +165,11 @@ export function Composer({ lead, now, timeZone, draft, onDraftChange, onSave, on
             {error}
           </p>
         )}
-        <Button onClick={() => void save()} disabled={saving || busy} className="h-10 px-4 text-[15px] max-sm:flex-1">
+        <Button
+          onClick={() => void save()}
+          aria-disabled={saving || busy}
+          className="h-10 px-4 text-[15px] aria-disabled:cursor-progress aria-disabled:opacity-70 max-sm:flex-1"
+        >
           {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
           {saving ? "Saving…" : "Save note"}
         </Button>

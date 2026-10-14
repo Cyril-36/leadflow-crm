@@ -153,11 +153,16 @@ export function AddLeadDialog({ open, onOpenChange, onCreated }: AddLeadDialogPr
         </form>
         <DialogFooter className="-mx-6 -mb-6 rounded-b-[14px] px-6 py-4">
           <DialogClose asChild>
-            <Button variant="outline" disabled={saving} className="h-10 px-4 text-[15px]">
+            <Button variant="outline" aria-disabled={saving} className="h-10 px-4 text-[15px] aria-disabled:opacity-60">
               Cancel
             </Button>
           </DialogClose>
-          <Button type="submit" form="add-lead-form" disabled={saving} className="h-10 px-4 text-[15px]">
+          <Button
+            type="submit"
+            form="add-lead-form"
+            aria-disabled={saving}
+            className="h-10 px-4 text-[15px] aria-disabled:cursor-progress aria-disabled:opacity-70"
+          >
             {saving && <Loader2 className="animate-spin" aria-hidden="true" />}
             {saving ? "Saving…" : "Save lead"}
           </Button>
