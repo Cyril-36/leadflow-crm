@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
 
-export const API = process.env.E2E_API_URL ?? "http://localhost:8000/api";
+// Must match the isolated API started by playwright.config.ts.
+export const API = process.env.E2E_API_URL ?? "http://localhost:8100/api";
 
 /** Create a lead through the API with a unique name, so tests never depend on each other. */
 export async function createLead(request: APIRequestContext, prefix: string) {
