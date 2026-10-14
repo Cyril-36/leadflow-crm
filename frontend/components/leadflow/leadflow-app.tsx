@@ -23,7 +23,7 @@ import { browserTimeZone, formatLongDate, formatWhen, toDateInput } from "@/lib/
 import { AddLeadDialog } from "./add-lead-dialog";
 import { Agenda } from "./agenda";
 import { LeadCard } from "./lead-card";
-import { LeadDialog, type DialogSession } from "./lead-dialog";
+import { LeadDialog, type DialogSession, type ExternalMutation } from "./lead-dialog";
 import { FirstUse, LoadError, LoadingList, NoResults, StaleBar } from "./list-states";
 
 type ReminderFilter = "any" | "today" | "overdue" | "attention";
@@ -88,6 +88,8 @@ export function LeadFlowApp() {
   const [dialog, setDialog] = useState<DialogSession | null>(null);
   const [lastDialog, setLastDialog] = useState<DialogSession | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // The latest Snooze result, so an open dialog for that lead shows it too.
+  const [cardMutation, setCardMutation] = useState<ExternalMutation | null>(null);
   const drafts = useDrafts();
   // Leads changed while their dialog was open get a short highlight once it closes.
   const [flash, setFlash] = useState<Record<number, number>>({});
@@ -181,11 +183,14 @@ export function LeadFlowApp() {
     if (mutation.entry === null) {
       toast(`Follow-up for ${lead.name} is already scheduled for ${formatWhen(at, new Date())}.`);
     } else {
+      setCardMutation({ mutation, at: Date.now() });
       await afterChange(`Follow-up for ${lead.name} moved to ${formatWhen(at, new Date())}.`);
       flashLeads([lead.id]);
     }
     // Wait for the refreshed list to render; the card may have moved sections or been filtered out.
     await new Promise((resolve) => setTimeout(resolve, 0));
+    // A dialog opened meanwhile keeps focus; it shows the change itself.
+    if (document.querySelector("[role='dialog'], [role='alertdialog']")) return;
     const here = order.indexOf(String(lead.id));
     const candidates = [String(lead.id), ...order.slice(here + 1), ...order.slice(0, Math.max(here, 0)).reverse()];
     const target =
@@ -458,6 +463,7 @@ export function LeadFlowApp() {
         onClose={closeLead}
         listStale={leads.stale}
         onRefreshList={retryRefresh}
+        externalMutation={cardMutation}
         onChanged={(leadId, message) => {
           changedWhileOpen.current.add(leadId);
           return afterChange(message);

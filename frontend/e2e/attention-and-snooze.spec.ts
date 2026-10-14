@@ -165,28 +165,57 @@ test("Snoozing to the time already set says so instead of claiming a move", asyn
   await expect(items.filter({ hasText: "Follow-up moved" })).toHaveCount(0); // nothing logged
 });
 
-test("the Snooze option matching the current follow-up is disabled", async ({ page, request }) => {
+/**
+ * Freezes the browser clock at 9:00 AM tomorrow (local), so the Snooze choices are fixed: "Later
+ * today" is exactly 11:00 AM. The API keeps the real clock, for which that day is in the future.
+ */
+async function freezeAtNineTomorrow(page: Page): Promise<number> {
   await page.goto("/");
-  // The "Later today" option: two hours ahead, rounded up to the quarter hour (lib/time.ts).
-  const laterToday = () =>
-    page.evaluate(() => {
-      const later = new Date(Date.now() + 2 * 3_600_000);
-      later.setSeconds(0, 0);
-      later.setMinutes(Math.ceil(later.getMinutes() / 15) * 15);
-      return later.getDate() === new Date().getDate() ? later.toISOString() : null;
-    });
-  let at = await laterToday();
-  if (at && (await page.evaluate(() => new Date(Date.now() + 2 * 3_600_000 + 60_000).getMinutes() % 15 === 0))) {
-    await page.waitForTimeout(61_000); // the option is about to change; wait for the next quarter
-    at = await laterToday();
-  }
-  test.skip(!at, "needs a 'Later today' option");
+  const nine = await page.evaluate(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  });
+  await page.clock.setFixedTime(nine);
+  return nine;
+}
+
+test("the Snooze option matching the current follow-up is disabled", async ({ page, request }) => {
+  const nine = await freezeAtNineTomorrow(page);
   const lead = await createLead(request, "Already set snooze");
+  const at = new Date(nine + 2 * 3_600_000).toISOString(); // the "Later today" choice, 11:00 AM
   await request.post(`${API}/leads/${lead.id}/discussions`, { data: { note: "Later.", follow_up_at: at } });
   await page.reload();
 
   await page.getByRole("button", { name: `Snooze the follow-up for ${lead.name}` }).click();
-  await expect(page.getByRole("menuitem", { name: /^Later today/ })).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByRole("menuitem", { name: /^Later today/ })).toContainText("Already set");
+  const laterToday = page.getByRole("menuitem", { name: /^Later today, 11:00 AM/ });
+  await expect(laterToday).toHaveAttribute("aria-disabled", "true");
+  await expect(laterToday).toContainText("Already set");
   await expect(page.getByRole("menuitem", { name: "Tomorrow, 10 AM" })).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("a Snooze that completes while the lead is open updates the dialog", async ({ page, request }) => {
+  await page.goto("/");
+  const lead = await leadDueSoon(page, request, "Snooze while open", 10);
+  test.skip(!lead, "needs at least 10 minutes left in the local day");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route(`**/api/leads/${lead!.id}/follow-up`, async (route) => {
+    await gate; // hold the request before it reaches the API
+    await route.continue();
+  });
+  await page.reload();
+
+  await page.getByRole("button", { name: `Snooze the follow-up for ${lead!.name}` }).click();
+  await page.getByRole("menuitem", { name: "Tomorrow, 10 AM" }).click();
+  await card(page, lead!.id).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/^Follow-up Today,/)).toBeVisible(); // loaded before the change
+
+  release();
+  await expect(dialog.getByText("Follow-up Tomorrow, 10:00 AM")).toBeVisible();
+  const items = dialog.getByRole("list", { name: "Discussion history, newest first" }).getByRole("listitem");
+  await expect(items.first()).toContainText("Follow-up moved to Tomorrow, 10:00 AM");
+  await expect(dialog.getByRole("textbox").first()).toBeFocused(); // focus stays in the dialog
 });

@@ -10,16 +10,18 @@ import type { Lead, LeadDetails } from "@/lib/api";
 
 interface DetailsEditorProps {
   lead: Lead;
+  /** A save is in flight. Owned by the dialog, which also locks the pencil, so a slow response
+   * can't close an editor reopened in the meantime. */
+  saving: boolean;
   /** Resolves to field errors (empty when saved). */
   onSave: (details: LeadDetails) => Promise<Record<string, string>>;
   onCancel: () => void;
 }
 
 /** Inline form in the lead dialog for correcting name, company and phone. */
-export function DetailsEditor({ lead, onSave, onCancel }: DetailsEditorProps) {
+export function DetailsEditor({ lead, saving, onSave, onCancel }: DetailsEditorProps) {
   const [values, setValues] = useState({ name: lead.name, company: lead.company ?? "", phone: lead.phone ?? "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -37,10 +39,7 @@ export function DetailsEditor({ lead, onSave, onCancel }: DetailsEditorProps) {
       onCancel();
       return;
     }
-    setSaving(true);
-    const fieldErrors = await onSave(changes);
-    setSaving(false);
-    setErrors(fieldErrors);
+    setErrors(await onSave(changes));
   };
 
   const field = (key: "name" | "company" | "phone", label: string, extra: { type?: string; maxLength: number }) => (
@@ -76,7 +75,7 @@ export function DetailsEditor({ lead, onSave, onCancel }: DetailsEditorProps) {
       onSubmit={submit}
       noValidate
       aria-label="Edit lead details"
-      className="lf-fade-in flex flex-none flex-col gap-3 border-b border-border bg-[#fafbfa] px-4 py-3.5 sm:px-6"
+      className="lf-fade-in flex flex-none flex-col gap-3 border-b border-border bg-[#fafbfa] px-4 py-3.5 sm:max-h-[40dvh] sm:overflow-y-auto sm:px-6"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {field("name", "Name", { maxLength: 120 })}
@@ -85,7 +84,7 @@ export function DetailsEditor({ lead, onSave, onCancel }: DetailsEditorProps) {
       </div>
       {errors.request && <p className="text-sm font-semibold text-overdue">{errors.request}</p>}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onCancel} aria-disabled={saving} className="h-9 px-3.5 text-[15px]">
+        <Button type="button" variant="outline" onClick={() => !saving && onCancel()} aria-disabled={saving} className="h-9 px-3.5 text-[15px]">
           Cancel
         </Button>
         <Button type="submit" aria-disabled={saving} className="h-9 px-3.5 text-[15px] aria-disabled:opacity-70">
