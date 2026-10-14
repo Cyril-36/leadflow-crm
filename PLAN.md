@@ -194,7 +194,7 @@ writes a `lead_created` entry, as in the wireframe.
 
 ## 7. Frontend design approach (Phase 4, after functional correctness)
 
-Explore visual directions with Claude Design artifacts first. **shadcn/ui is the one
+Explore a few visual directions first. **shadcn/ui is the one
 foundation.** Another source (Arc UI, affectUI, ObsidianUI, Kobra, Transitions.dev) is added
 only for one specific component the foundation lacks, after checking its licence, bundle cost
 and accessibility; at most one library per purpose. Consistent tokens (colors, radius,

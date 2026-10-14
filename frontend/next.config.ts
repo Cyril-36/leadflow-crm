@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // The Docker image runs Next's self-contained server (see frontend/Dockerfile).
   output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
-  // Don't write an AGENTS.md for AI coding tools into the project when `next dev` runs.
+  // Keep `next dev` from adding an AGENTS.md file to the project.
   agentRules: false,
   cacheComponents: true,
   partialPrefetching: true,
