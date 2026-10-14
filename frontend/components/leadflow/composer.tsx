@@ -107,6 +107,13 @@ export function Composer({
         value={draft}
         maxLength={2000}
         placeholder="What did you discuss?"
+        aria-keyshortcuts="Control+Enter Meta+Enter"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void save();
+          }
+        }}
         onChange={(event) => {
           onDraftChange(event.target.value);
           setError(null);
@@ -200,6 +207,9 @@ export function Composer({
             {error}
           </p>
         )}
+        <span aria-hidden="true" className="hidden text-xs text-muted-foreground sm:inline">
+          Ctrl/⌘ + Enter
+        </span>
         <Button
           onClick={() => void save()}
           aria-disabled={saving || busy}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Search, TrendingUp } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "cn";
@@ -77,6 +77,27 @@ export function LeadFlowApp() {
   // Leads changed while their dialog was open get a short highlight once it closes.
   const [flash, setFlash] = useState<Record<number, number>>({});
   const changedWhileOpen = useRef(new Set<number>());
+
+  // Keyboard shortcuts: "/" focuses search, "n" adds a lead. Ignored while typing, with a
+  // modifier held, or when a dialog is open (Radix marks the page behind it aria-hidden).
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']")) return;
+      if (document.querySelector("[role='dialog'], [role='alertdialog']")) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if (event.key === "n" || event.key === "N") {
+        event.preventDefault();
+        setAddOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const flashLeads = (ids: number[]) => {
     if (!ids.length) return;
@@ -163,7 +184,9 @@ export function LeadFlowApp() {
           <label className="flex h-10 min-w-[200px] flex-[0_1_320px] items-center gap-2 rounded-lg border border-border bg-background px-3 text-muted-foreground focus-within:border-primary focus-within:ring-3 focus-within:ring-accent max-sm:order-3 max-sm:flex-[1_1_100%]">
             <Search aria-hidden="true" className="size-[18px]" />
             <input
+              ref={searchRef}
               type="search"
+              aria-keyshortcuts="/"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search by name or company"
@@ -171,8 +194,16 @@ export function LeadFlowApp() {
               maxLength={100}
               className="w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
             />
+            <kbd aria-hidden="true" className="hidden rounded border border-border bg-card px-1.5 text-xs text-muted-foreground sm:inline">
+              /
+            </kbd>
           </label>
-          <Button onClick={() => setAddOpen(true)} className="h-10 px-4 text-[15px] hover:bg-primary-hover">
+          <Button
+            onClick={() => setAddOpen(true)}
+            aria-keyshortcuts="N"
+            title="Add lead (N)"
+            className="h-10 px-4 text-[15px] hover:bg-primary-hover"
+          >
             <Plus aria-hidden="true" /> Add lead
           </Button>
         </div>
